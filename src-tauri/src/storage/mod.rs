@@ -1,20 +1,33 @@
+//! SQLite persistence for iPet.
+//!
+//! The [`Storage`] type owns a single SQLite connection guarded by a mutex and
+//! exposes one method family per data domain. Domain methods live in sibling
+//! modules (`chat`, `tools`, `token_usage`, `caches`, `preferences`) that each
+//! add to `impl Storage`; this module owns the struct, connection lifecycle,
+//! schema migrations, builtin-tool seeding, and retention sweeps.
+
 use crate::app_error::{AppError, AppResult};
-use crate::config::LlmSettings;
 use crate::secret::MachineKey;
 use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod caches;
+mod chat;
+mod preferences;
+mod token_usage;
+mod tools;
+
 /// Builtin tool manifests, embedded at compile time so the `tool.json` files
 /// under `tool-packages/` are the single source of truth for builtin tool
 /// metadata (name, description, parameter schema). The same files ship as
 /// distributable packages, so runtime and distribution never drift.
-const SCAN_DISK_TOOL_JSON: &str = include_str!("../../tool-packages/scan_disk/tool.json");
+const SCAN_DISK_TOOL_JSON: &str = include_str!("../../../tool-packages/scan_disk/tool.json");
 const SYSTEM_STATUS_TOOL_JSON: &str =
-    include_str!("../../tool-packages/get_system_status/tool.json");
+    include_str!("../../../tool-packages/get_system_status/tool.json");
 
 /// Minimal projection of a `tool.json` manifest — just the fields needed to
 /// seed a builtin `ToolConfig`. The full manifest (runtime, permissions,
@@ -101,7 +114,7 @@ pub struct ToolConfigInput {
     pub http: Option<HttpToolConfig>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsageRecord {
     pub id: i64,
@@ -114,7 +127,7 @@ pub struct TokenUsageRecord {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsageBucket {
     pub label: String,
@@ -124,7 +137,7 @@ pub struct TokenUsageBucket {
     pub requests: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsageStats {
     pub prompt_tokens: i64,
@@ -144,7 +157,11 @@ pub struct Storage {
     /// `LlmSettings.api_key` are stored in the DB as an `enc:v1:...` envelope
     /// instead of plaintext. Legacy plaintext values continue to load via
     /// `MachineKey::decrypt_or_passthrough`.
-    secret: Option<MachineKey>,
+    ///
+    /// `pub(crate)` so the domain modules (`chat`, `tools`, …) under
+    /// `storage/` can read/encrypt the api_key; nothing outside this crate
+    /// touches it.
+    pub(crate) secret: Option<MachineKey>,
 }
 
 /// Configurable retention thresholds. The defaults trim everything aggressively
@@ -374,394 +391,21 @@ impl Storage {
         Ok(())
     }
 
-    pub fn load_llm_settings(&self) -> AppResult<LlmSettings> {
-        let conn = self.lock()?;
-        let value: Option<String> = conn
-            .query_row(
-                "SELECT value FROM preferences WHERE key = 'llm_settings'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-        drop(conn);
-
-        let mut settings: LlmSettings = match value {
-            Some(raw) => serde_json::from_str(&raw).unwrap_or_default(),
-            None => LlmSettings::default(),
-        };
-
-        // If a machine key is wired in, transparently decrypt the api_key.
-        // Legacy plaintext keys pass through (see decrypt_or_passthrough) so
-        // upgrades don't drop existing credentials.
-        if let (Some(key), Some(api_key)) = (self.secret.as_ref(), settings.api_key.as_ref()) {
-            match key.decrypt_or_passthrough(api_key) {
-                Ok(plain) => settings.api_key = Some(plain),
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to decrypt stored api_key; clearing");
-                    settings.api_key = None;
-                }
-            }
-        }
-        Ok(settings)
-    }
-
-    pub fn save_llm_settings(&self, settings: &LlmSettings) -> AppResult<()> {
-        settings
-            .validate_public_fields()
-            .map_err(AppError::Config)?;
-
-        // Clone so we can swap the api_key for an encrypted envelope without
-        // mutating the caller's struct.
-        let mut to_persist = settings.clone();
-        if let (Some(key), Some(api_key)) = (self.secret.as_ref(), to_persist.api_key.as_ref()) {
-            if !api_key.trim().is_empty() && !api_key.starts_with("enc:v1:") {
-                to_persist.api_key = Some(key.encrypt(api_key)?);
-            }
-        }
-
-        let value = serde_json::to_string_pretty(&to_persist)?;
-        self.set_preference("llm_settings", &value)
-    }
-
-    pub fn save_chat_message(&self, role: &str, content: &str) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO chat_messages (role, content, created_at) VALUES (?1, ?2, ?3)",
-            params![role, content, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    pub fn recent_messages(&self, limit: usize) -> AppResult<Vec<ChatRecord>> {
-        let conn = self.lock()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, role, content, created_at
-             FROM chat_messages
-             ORDER BY id DESC
-             LIMIT ?1",
-        )?;
-        let rows = stmt.query_map(params![limit as i64], |row| {
-            Ok(ChatRecord {
-                id: row.get(0)?,
-                role: row.get(1)?,
-                content: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })?;
-
-        let mut records = Vec::new();
-        for row in rows {
-            records.push(row?);
-        }
-        records.reverse();
-        Ok(records)
-    }
-
-    pub fn cache_disk_scan(&self, root_path: &str, result_json: &str) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO disk_scan_cache (root_path, result_json, scanned_at)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(root_path) DO UPDATE SET
-                result_json = excluded.result_json,
-                scanned_at = excluded.scanned_at",
-            params![root_path, result_json, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    pub fn cache_system_sample(&self, sample_json: &str) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO system_samples (sample_json, created_at) VALUES (?1, ?2)",
-            params![sample_json, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    pub fn list_tools(&self) -> AppResult<Vec<ToolConfig>> {
-        let conn = self.lock()?;
-        let mut stmt = conn.prepare(
-            "SELECT name, display_name, description, kind, enabled, built_in,
-                    parameters_json, http_json, updated_at
-             FROM tool_configs
-             ORDER BY built_in DESC, name ASC",
-        )?;
-        let rows = stmt.query_map([], read_tool_row)?;
-
-        let mut tools = Vec::new();
-        for row in rows {
-            tools.push(row?);
-        }
-        Ok(tools)
-    }
-
-    pub fn active_tools(&self) -> AppResult<Vec<ToolConfig>> {
-        Ok(self
-            .list_tools()?
-            .into_iter()
-            .filter(|tool| tool.enabled)
-            .collect())
-    }
-
-    pub fn get_tool(&self, name: &str) -> AppResult<Option<ToolConfig>> {
-        let conn = self.lock()?;
-        conn.query_row(
-            "SELECT name, display_name, description, kind, enabled, built_in,
-                    parameters_json, http_json, updated_at
-             FROM tool_configs
-             WHERE name = ?1",
-            params![name],
-            read_tool_row,
-        )
-        .optional()
-        .map_err(Into::into)
-    }
-
-    pub fn save_custom_tool(&self, input: ToolConfigInput) -> AppResult<ToolConfig> {
-        validate_tool_input(&input)?;
-        if self
-            .get_tool(&input.name)?
-            .map(|tool| tool.built_in)
-            .unwrap_or(false)
-        {
-            return Err(AppError::InvalidInput(
-                "内置工具不能被自定义工具覆盖".to_string(),
-            ));
-        }
-
-        let now = Utc::now().to_rfc3339();
-        let http_json = input
-            .http
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()?;
-        let parameters_json = serde_json::to_string_pretty(&input.parameters)?;
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO tool_configs
-                (name, display_name, description, kind, enabled, built_in,
-                 parameters_json, http_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?8)
-             ON CONFLICT(name) DO UPDATE SET
-                display_name = excluded.display_name,
-                description = excluded.description,
-                kind = excluded.kind,
-                enabled = excluded.enabled,
-                parameters_json = excluded.parameters_json,
-                http_json = excluded.http_json,
-                updated_at = excluded.updated_at",
-            params![
-                input.name,
-                input.display_name,
-                input.description,
-                input.kind,
-                i64::from(input.enabled),
-                parameters_json,
-                http_json,
-                now
-            ],
-        )?;
-        drop(conn);
-
-        self.get_tool(&input.name)?
-            .ok_or_else(|| AppError::Config("工具保存后未找到".to_string()))
-    }
-
-    pub fn set_tool_enabled(&self, name: &str, enabled: bool) -> AppResult<ToolConfig> {
-        let conn = self.lock()?;
-        conn.execute(
-            "UPDATE tool_configs SET enabled = ?1, updated_at = ?2 WHERE name = ?3",
-            params![i64::from(enabled), Utc::now().to_rfc3339(), name],
-        )?;
-        drop(conn);
-        self.get_tool(name)?
-            .ok_or_else(|| AppError::InvalidInput(format!("工具不存在: {name}")))
-    }
-
-    pub fn delete_tool(&self, name: &str) -> AppResult<()> {
-        if self
-            .get_tool(name)?
-            .map(|tool| tool.built_in)
-            .unwrap_or(false)
-        {
-            return Err(AppError::InvalidInput("内置工具不能删除".to_string()));
-        }
-
-        let conn = self.lock()?;
-        conn.execute("DELETE FROM tool_configs WHERE name = ?1", params![name])?;
-        Ok(())
-    }
-
-    pub fn record_token_usage(
+    /// Acquire the connection guard. `pub(crate)` so the domain modules
+    /// (`chat`, `tools`, …) under `storage/` can run queries against the
+    /// shared connection.
+    pub(crate) fn lock(
         &self,
-        request_id: &str,
-        model: &str,
-        prompt_tokens: i64,
-        completion_tokens: i64,
-        total_tokens: i64,
-        tool_calls: i64,
-    ) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO token_usage
-                (request_id, model, prompt_tokens, completion_tokens, total_tokens, tool_calls, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                request_id,
-                model,
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-                tool_calls,
-                Utc::now().to_rfc3339()
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn token_stats(&self) -> AppResult<TokenUsageStats> {
-        let conn = self.lock()?;
-        let (prompt_tokens, completion_tokens, total_tokens, requests, tool_calls) = conn
-            .query_row(
-                "SELECT
-                    COALESCE(SUM(prompt_tokens), 0),
-                    COALESCE(SUM(completion_tokens), 0),
-                    COALESCE(SUM(total_tokens), 0),
-                    COUNT(*),
-                    COALESCE(SUM(tool_calls), 0)
-                 FROM token_usage",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, i64>(4)?,
-                    ))
-                },
-            )?;
-
-        let by_day = query_usage_buckets(
-            &conn,
-            "SELECT substr(created_at, 1, 10), SUM(prompt_tokens), SUM(completion_tokens),
-                    SUM(total_tokens), COUNT(*)
-             FROM token_usage
-             GROUP BY substr(created_at, 1, 10)
-             ORDER BY substr(created_at, 1, 10) DESC
-             LIMIT 14",
-        )?;
-        let by_model = query_usage_buckets(
-            &conn,
-            "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*)
-             FROM token_usage
-             GROUP BY model
-             ORDER BY SUM(total_tokens) DESC",
-        )?;
-
-        let mut stmt = conn.prepare(
-            "SELECT id, request_id, model, prompt_tokens, completion_tokens,
-                    total_tokens, tool_calls, created_at
-             FROM token_usage
-             ORDER BY id DESC
-             LIMIT 30",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(TokenUsageRecord {
-                id: row.get(0)?,
-                request_id: row.get(1)?,
-                model: row.get(2)?,
-                prompt_tokens: row.get(3)?,
-                completion_tokens: row.get(4)?,
-                total_tokens: row.get(5)?,
-                tool_calls: row.get(6)?,
-                created_at: row.get(7)?,
-            })
-        })?;
-        let mut recent = Vec::new();
-        for row in rows {
-            recent.push(row?);
-        }
-
-        Ok(TokenUsageStats {
-            prompt_tokens,
-            completion_tokens,
-            total_tokens,
-            requests,
-            tool_calls,
-            by_day,
-            by_model,
-            recent,
-        })
-    }
-
-    fn upsert_builtin_tool(&self, tool: &ToolConfig) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO tool_configs
-                (name, display_name, description, kind, enabled, built_in,
-                 parameters_json, http_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, NULL, ?7, ?7)
-             ON CONFLICT(name) DO UPDATE SET
-                display_name = excluded.display_name,
-                description = excluded.description,
-                kind = excluded.kind,
-                built_in = 1,
-                parameters_json = excluded.parameters_json",
-            params![
-                tool.name,
-                tool.display_name,
-                tool.description,
-                tool.kind,
-                i64::from(tool.enabled),
-                serde_json::to_string_pretty(&tool.parameters)?,
-                Utc::now().to_rfc3339()
-            ],
-        )?;
-        Ok(())
-    }
-
-    fn set_preference(&self, key: &str, value: &str) -> AppResult<()> {
-        let conn = self.lock()?;
-        conn.execute(
-            "INSERT INTO preferences (key, value, updated_at)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                updated_at = excluded.updated_at",
-            params![key, value, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    /// Persist an arbitrary string under an arbitrary key. Used for UI-side
-    /// state like "the window size the user had before going compact" that
-    /// doesn't deserve its own table.
-    pub fn set_session_value(&self, key: &str, value: &str) -> AppResult<()> {
-        self.set_preference(key, value)
-    }
-
-    pub fn get_session_value(&self, key: &str) -> AppResult<Option<String>> {
-        let conn = self.lock()?;
-        let value: Option<String> = conn
-            .query_row(
-                "SELECT value FROM preferences WHERE key = ?1",
-                params![key],
-                |row| row.get(0),
-            )
-            .optional()?;
-        Ok(value)
-    }
-
-    fn lock(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
+    ) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
         self.conn
             .lock()
             .map_err(|_| AppError::Config("database lock poisoned".to_string()))
     }
 }
 
-fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolConfig> {
+/// Read a `tool_configs` row into a [`ToolConfig`]. `pub(super)` so the
+/// `tools` module can reuse it across list/get queries.
+pub(crate) fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolConfig> {
     let parameters_json: String = row.get(6)?;
     let http_json: Option<String> = row.get(7)?;
     Ok(ToolConfig {
@@ -780,7 +424,11 @@ fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolConfig> {
     })
 }
 
-fn query_usage_buckets(conn: &Connection, sql: &str) -> AppResult<Vec<TokenUsageBucket>> {
+/// Aggregate `token_usage` into labeled buckets for the stats view.
+pub(crate) fn query_usage_buckets(
+    conn: &Connection,
+    sql: &str,
+) -> AppResult<Vec<TokenUsageBucket>> {
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         Ok(TokenUsageBucket {
@@ -799,7 +447,9 @@ fn query_usage_buckets(conn: &Connection, sql: &str) -> AppResult<Vec<TokenUsage
     Ok(buckets)
 }
 
-fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
+/// Validate a custom tool before persisting. `pub(super)` so the `tools`
+/// module can call it from `save_custom_tool`.
+pub(crate) fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
     if !is_valid_tool_name(&input.name) {
         return Err(AppError::InvalidInput(
             "工具名称只能包含英文字母、数字和下划线，且必须以字母或下划线开头".to_string(),
@@ -841,7 +491,7 @@ fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
     Ok(())
 }
 
-fn is_valid_tool_name(name: &str) -> bool {
+pub(crate) fn is_valid_tool_name(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;
@@ -855,6 +505,7 @@ fn is_valid_tool_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::LlmSettings;
     use crate::testutil::TempDir;
 
     fn fresh_storage() -> (TempDir, Storage) {
