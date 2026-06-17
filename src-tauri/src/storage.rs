@@ -177,6 +177,77 @@ pub struct RetentionReport {
     pub disk_removed: usize,
 }
 
+/// Current schema version. Bump when adding a migration to `MIGRATIONS`.
+pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+
+/// Ordered schema migrations. `MIGRATIONS[i]` advances the DB from
+/// `user_version == i` to `i + 1`. Append-only — never reorder or rewrite an
+/// entry that has shipped, or existing user databases will silently skip it.
+const MIGRATIONS: &[fn(&Connection) -> AppResult<()>] = &[
+    // v0 -> v1: initial schema. `IF NOT EXISTS` so a legacy DB created before
+    // versioning (user_version == 0) converges without error.
+    |conn| -> AppResult<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS disk_scan_cache (
+                root_path TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                scanned_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS system_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sample_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tool_configs (
+                name TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                enabled INTEGER NOT NULL,
+                built_in INTEGER NOT NULL,
+                parameters_json TEXT NOT NULL,
+                http_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                tool_calls INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            "#,
+        )?;
+        Ok(())
+    },
+    // Add v1 -> v2 migrations here as append-only entries, e.g.:
+    // |conn| -> AppResult<()> {
+    //     conn.execute("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER", [])?;
+    //     Ok(())
+    // },
+];
+
 impl Storage {
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
         Self::open_with_secret(path, None)
@@ -261,63 +332,29 @@ impl Storage {
         })
     }
 
+    /// Run schema migrations forward to the current `SCHEMA_VERSION`.
+    ///
+    /// Migrations are versioned via `PRAGMA user_version`: each migration
+    /// bumps the version by one and only runs on DBs below that version.
+    /// New schemas append a migration fn to `MIGRATIONS`; never edit an
+    /// already-shipped migration in place — existing user DBs would skip it.
+    ///
+    /// `IF NOT EXISTS` on the v1 tables makes a brand-new DB and a legacy DB
+    /// created before versioning was introduced both converge to v1 without
+    /// error (legacy DBs report `user_version = 0`).
     fn migrate(&self) -> AppResult<()> {
         let conn = self.lock()?;
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
 
-            CREATE TABLE IF NOT EXISTS preferences (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS disk_scan_cache (
-                root_path TEXT PRIMARY KEY,
-                result_json TEXT NOT NULL,
-                scanned_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS system_samples (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sample_json TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS tool_configs (
-                name TEXT PRIMARY KEY,
-                display_name TEXT NOT NULL,
-                description TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                enabled INTEGER NOT NULL,
-                built_in INTEGER NOT NULL,
-                parameters_json TEXT NOT NULL,
-                http_json TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS token_usage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id TEXT NOT NULL,
-                model TEXT NOT NULL,
-                prompt_tokens INTEGER NOT NULL,
-                completion_tokens INTEGER NOT NULL,
-                total_tokens INTEGER NOT NULL,
-                tool_calls INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            "#,
-        )?;
+        let current: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        for (version, migration) in MIGRATIONS.iter().enumerate() {
+            let target = (version + 1) as i64;
+            if current < target {
+                migration(&conn)?;
+                conn.execute_batch(&format!("PRAGMA user_version = {target}"))?;
+                tracing::info!(from = current, to = target, "storage schema migrated");
+            }
+        }
         Ok(())
     }
 
@@ -834,6 +871,53 @@ mod tests {
         let storage = Storage::open_with_secret(dir.path().join("ipet-test.sqlite3"), Some(key))
             .expect("encrypted storage must open");
         (dir, storage)
+    }
+
+    #[test]
+    fn fresh_db_reaches_current_schema_version() {
+        let (_dir, storage) = fresh_storage();
+        let version: i64 = storage
+            .lock()
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION, "fresh DB should be fully migrated");
+    }
+
+    #[test]
+    fn legacy_unversioned_db_converges_on_open() {
+        // Simulate a DB created before versioning existed: tables present,
+        // but user_version == 0. Storage::open must bring it forward without
+        // error and without dropping the pre-existing row.
+        let dir = TempDir::new("legacy-db");
+        let db_path = dir.path().join("ipet-legacy.sqlite3");
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+                 INSERT INTO preferences (key, value, updated_at) VALUES ('k', 'v', '1970-01-01T00:00:00Z');",
+            )
+            .unwrap();
+            // deliberately leave user_version at its default of 0
+        }
+        let storage = Storage::open(&db_path).expect("legacy DB must migrate on open");
+
+        let version: i64 = storage
+            .lock()
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+
+        // The legacy row survived the migration.
+        let value: String = storage
+            .lock()
+            .unwrap()
+            .query_row("SELECT value FROM preferences WHERE key = 'k'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, "v");
     }
 
     fn http_tool_input(name: &str, url: &str) -> ToolConfigInput {
