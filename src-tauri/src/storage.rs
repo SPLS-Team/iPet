@@ -8,6 +8,49 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+/// Builtin tool manifests, embedded at compile time so the `tool.json` files
+/// under `tool-packages/` are the single source of truth for builtin tool
+/// metadata (name, description, parameter schema). The same files ship as
+/// distributable packages, so runtime and distribution never drift.
+const SCAN_DISK_TOOL_JSON: &str = include_str!("../../tool-packages/scan_disk/tool.json");
+const SYSTEM_STATUS_TOOL_JSON: &str =
+    include_str!("../../tool-packages/get_system_status/tool.json");
+
+/// Minimal projection of a `tool.json` manifest — just the fields needed to
+/// seed a builtin `ToolConfig`. The full manifest (runtime, permissions,
+/// safety, version) is distributable metadata that doesn't live in the DB.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BuiltinToolManifest {
+    name: String,
+    display_name: String,
+    description: String,
+    #[serde(default = "default_true")]
+    enabled: bool,
+    parameters: Value,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn builtin_tool_from_manifest(raw: &str) -> AppResult<ToolConfig> {
+    let manifest: BuiltinToolManifest = serde_json::from_str(raw).map_err(|err| {
+        AppError::InvalidInput(format!("解析内置工具 manifest 失败: {err}"))
+    })?;
+    Ok(ToolConfig {
+        name: manifest.name,
+        display_name: manifest.display_name,
+        description: manifest.description,
+        kind: "builtin".to_string(),
+        enabled: manifest.enabled,
+        built_in: true,
+        parameters: manifest.parameters,
+        http: None,
+        updated_at: Utc::now().to_rfc3339(),
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatRecord {
@@ -279,60 +322,13 @@ impl Storage {
     }
 
     fn seed_builtin_tools(&self) -> AppResult<()> {
-        let tools = vec![
-            ToolConfig {
-                name: "get_system_status".to_string(),
-                display_name: "系统状态".to_string(),
-                description: "获取当前 CPU、内存、磁盘和高占用进程概览。".to_string(),
-                kind: "builtin".to_string(),
-                enabled: true,
-                built_in: true,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "process_limit": {
-                            "type": "integer",
-                            "minimum": 3,
-                            "maximum": 30,
-                            "description": "返回的进程数量。"
-                        }
-                    }
-                }),
-                http: None,
-                updated_at: Utc::now().to_rfc3339(),
-            },
-            ToolConfig {
-                name: "scan_disk".to_string(),
-                display_name: "磁盘扫描".to_string(),
-                description: "扫描指定目录，按占用大小返回主要子目录和文件。".to_string(),
-                kind: "builtin".to_string(),
-                enabled: true,
-                built_in: true,
-                parameters: json!({
-                    "type": "object",
-                    "required": ["path"],
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "要扫描的本地目录绝对路径。"
-                        },
-                        "max_depth": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 12,
-                            "description": "递归展示深度。"
-                        },
-                        "max_children": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 64,
-                            "description": "每层最多返回多少个子节点。"
-                        }
-                    }
-                }),
-                http: None,
-                updated_at: Utc::now().to_rfc3339(),
-            },
+        // The builtin tool manifests are embedded from tool-packages/*/tool.json
+        // (see `SCAN_DISK_TOOL_JSON` / `SYSTEM_STATUS_TOOL_JSON`), so editing a
+        // tool's schema in its package is the only place that change needs to
+        // land — the runtime seed picks it up on next start.
+        let tools = [
+            builtin_tool_from_manifest(SYSTEM_STATUS_TOOL_JSON)?,
+            builtin_tool_from_manifest(SCAN_DISK_TOOL_JSON)?,
         ];
 
         for tool in tools {
