@@ -98,6 +98,26 @@ async function mockInvoke(command, args) {
           },
         },
       },
+      {
+        name: "echo_local",
+        displayName: "本地回显(示例)",
+        description: "一个示例本地工具：把传入参数原样回显，用于演示 local 工具。",
+        kind: "local",
+        enabled: true,
+        builtIn: false,
+        parameters: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "要回显的文本" },
+          },
+        },
+        local: {
+          command: "node",
+          args: ["echo_tool.js"],
+          cwd: null,
+          timeoutSecs: 30,
+        },
+      },
     ];
   }
   if (command === "set_tool_enabled" || command === "save_tool" || command === "delete_tool") {

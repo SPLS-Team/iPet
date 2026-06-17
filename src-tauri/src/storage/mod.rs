@@ -60,6 +60,7 @@ fn builtin_tool_from_manifest(raw: &str) -> AppResult<ToolConfig> {
         built_in: true,
         parameters: manifest.parameters,
         http: None,
+        local: None,
         updated_at: Utc::now().to_rfc3339(),
     })
 }
@@ -88,6 +89,30 @@ pub struct HttpToolConfig {
     pub headers: Vec<ToolHeader>,
 }
 
+/// Configuration for a `kind: "local"` tool — an executable or script the
+/// dispatcher spawns per call, talking JSON over stdin/stdout. See
+/// `docs/TOOL_PACKAGE.md` §local.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalToolConfig {
+    /// Executable to run (PATH-resolved, or an absolute path). Relative paths
+    /// are resolved against the package directory at import time and stored
+    /// absolute, so the tool keeps working regardless of the host's CWD.
+    pub command: String,
+    /// Extra args appended after `command`. Args may reference the model's
+    /// arguments via the `$ARGS` placeholder? No — arguments travel on stdin
+    /// to avoid shell-injection; args are static.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Working directory for the child. Defaults to the package dir at import
+    /// time (resolved to absolute), or the host CWD if unset.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Hard kill deadline for the child, in seconds. Defaults to 30.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolConfig {
@@ -99,6 +124,7 @@ pub struct ToolConfig {
     pub built_in: bool,
     pub parameters: Value,
     pub http: Option<HttpToolConfig>,
+    pub local: Option<LocalToolConfig>,
     pub updated_at: String,
 }
 
@@ -112,6 +138,8 @@ pub struct ToolConfigInput {
     pub enabled: bool,
     pub parameters: Value,
     pub http: Option<HttpToolConfig>,
+    #[serde(default)]
+    pub local: Option<LocalToolConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,11 +286,13 @@ const MIGRATIONS: &[fn(&Connection) -> AppResult<()>] = &[
         )?;
         Ok(())
     },
-    // Add v1 -> v2 migrations here as append-only entries, e.g.:
-    // |conn| -> AppResult<()> {
-    //     conn.execute("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER", [])?;
-    //     Ok(())
-    // },
+    // v1 -> v2: add `local_json` column for `kind: "local"` tool configs
+    // (subprocess/stdio tools). Nullable — http/builtin tools leave it NULL.
+    |conn| -> AppResult<()> {
+        conn.execute("ALTER TABLE tool_configs ADD COLUMN local_json TEXT", [])?;
+        Ok(())
+    },
+    // Add future v2 -> v3 migrations here as append-only entries.
 ];
 
 impl Storage {
@@ -408,6 +438,7 @@ impl Storage {
 pub(crate) fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolConfig> {
     let parameters_json: String = row.get(6)?;
     let http_json: Option<String> = row.get(7)?;
+    let local_json: Option<String> = row.get(9)?;
     Ok(ToolConfig {
         name: row.get(0)?,
         display_name: row.get(1)?,
@@ -420,6 +451,7 @@ pub(crate) fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolCon
             "properties": {}
         })),
         http: http_json.and_then(|raw| serde_json::from_str(&raw).ok()),
+        local: local_json.and_then(|raw| serde_json::from_str(&raw).ok()),
         updated_at: row.get(8)?,
     })
 }
@@ -461,11 +493,6 @@ pub(crate) fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
     if input.description.trim().is_empty() {
         return Err(AppError::InvalidInput("工具描述不能为空".to_string()));
     }
-    if input.kind != "http" {
-        return Err(AppError::InvalidInput(
-            "当前自定义工具仅支持 kind=http".to_string(),
-        ));
-    }
     if input
         .parameters
         .get("type")
@@ -477,6 +504,19 @@ pub(crate) fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
             "工具 parameters 必须是 JSON Schema object".to_string(),
         ));
     }
+    match input.kind.as_str() {
+        "http" => validate_http_tool(input)?,
+        "local" => validate_local_tool(input)?,
+        other => {
+            return Err(AppError::InvalidInput(format!(
+                "不支持的工具类型: {other}（当前支持 http / local）"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn validate_http_tool(input: &ToolConfigInput) -> AppResult<()> {
     let http = input
         .http
         .as_ref()
@@ -488,6 +528,40 @@ pub(crate) fn validate_tool_input(input: &ToolConfigInput) -> AppResult<()> {
         ));
     }
     crate::http_safety::validate_url_syntax(&http.url)?;
+    Ok(())
+}
+
+/// Validate a `kind: "local"` tool. The command must be non-empty; relative
+/// commands are resolved against PATH by the OS at spawn time. Absolute paths
+/// are sanity-checked to exist. `cwd`, if absolute, must exist; relative cwd
+/// is resolved against the host CWD at dispatch time (not validated here).
+fn validate_local_tool(input: &ToolConfigInput) -> AppResult<()> {
+    let local = input
+        .local
+        .as_ref()
+        .ok_or_else(|| AppError::InvalidInput("local 工具必须配置 local".to_string()))?;
+    if local.command.trim().is_empty() {
+        return Err(AppError::InvalidInput(
+            "local 工具的 command 不能为空".to_string(),
+        ));
+    }
+    // Absolute command path must point at something runnable. Bare names
+    // (python, node, ./script) are left to PATH / the shell at spawn time.
+    let cmd_path = std::path::Path::new(&local.command);
+    if cmd_path.is_absolute() && !cmd_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "local 工具 command 路径不存在: {}",
+            local.command
+        )));
+    }
+    if let Some(cwd) = local.cwd.as_ref() {
+        let cwd_path = std::path::Path::new(cwd);
+        if cwd_path.is_absolute() && !cwd_path.exists() {
+            return Err(AppError::InvalidInput(format!(
+                "local 工具 cwd 路径不存在: {cwd}"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -584,6 +658,7 @@ mod tests {
                 url: url.to_string(),
                 headers: vec![],
             }),
+            local: None,
         }
     }
 
@@ -669,6 +744,63 @@ mod tests {
         let input = http_tool_input("my_tool", "http://127.0.0.1/admin");
         let err = storage.save_custom_tool(input).unwrap_err();
         assert!(matches!(err, AppError::InvalidInput(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn local_tool_round_trips_through_storage() {
+        let (_dir, storage) = fresh_storage();
+        let input = ToolConfigInput {
+            name: "my_local".to_string(),
+            display_name: "本地".to_string(),
+            description: "a local tool".to_string(),
+            kind: "local".to_string(),
+            enabled: true,
+            parameters: json!({"type": "object", "properties": {}}),
+            http: None,
+            local: Some(LocalToolConfig {
+                command: "node".to_string(),
+                args: vec!["script.js".to_string()],
+                cwd: None,
+                timeout_secs: Some(20),
+            }),
+        };
+        let saved = storage.save_custom_tool(input).unwrap();
+        assert_eq!(saved.kind, "local");
+        let local = saved.local.as_ref().expect("local config persisted");
+        assert_eq!(local.command, "node");
+        assert_eq!(local.args, vec!["script.js".to_string()]);
+        assert_eq!(local.timeout_secs, Some(20));
+        assert!(saved.http.is_none());
+
+        // Reload from DB to confirm the local_json column survives the round trip.
+        let reloaded = storage.get_tool("my_local").unwrap().unwrap();
+        assert_eq!(
+            reloaded.local.as_ref().unwrap().command,
+            "node",
+            "local config must round-trip through local_json"
+        );
+    }
+
+    #[test]
+    fn local_tool_validation_rejects_empty_command() {
+        let (_dir, storage) = fresh_storage();
+        let input = ToolConfigInput {
+            name: "bad_local".to_string(),
+            display_name: "Bad".to_string(),
+            description: "d".to_string(),
+            kind: "local".to_string(),
+            enabled: true,
+            parameters: json!({"type": "object"}),
+            http: None,
+            local: Some(LocalToolConfig {
+                command: "   ".to_string(),
+                args: vec![],
+                cwd: None,
+                timeout_secs: None,
+            }),
+        };
+        let err = storage.save_custom_tool(input).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
     }
 
     #[test]

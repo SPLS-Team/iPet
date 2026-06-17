@@ -11,7 +11,7 @@ impl Storage {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT name, display_name, description, kind, enabled, built_in,
-                    parameters_json, http_json, updated_at
+                    parameters_json, http_json, updated_at, local_json
              FROM tool_configs
              ORDER BY built_in DESC, name ASC",
         )?;
@@ -36,7 +36,7 @@ impl Storage {
         let conn = self.lock()?;
         conn.query_row(
             "SELECT name, display_name, description, kind, enabled, built_in,
-                    parameters_json, http_json, updated_at
+                    parameters_json, http_json, updated_at, local_json
              FROM tool_configs
              WHERE name = ?1",
             params![name],
@@ -64,13 +64,18 @@ impl Storage {
             .as_ref()
             .map(serde_json::to_string)
             .transpose()?;
+        let local_json = input
+            .local
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         let parameters_json = serde_json::to_string_pretty(&input.parameters)?;
         let conn = self.lock()?;
         conn.execute(
             "INSERT INTO tool_configs
                 (name, display_name, description, kind, enabled, built_in,
-                 parameters_json, http_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?8)
+                 parameters_json, http_json, local_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8, ?9, ?9)
              ON CONFLICT(name) DO UPDATE SET
                 display_name = excluded.display_name,
                 description = excluded.description,
@@ -78,6 +83,7 @@ impl Storage {
                 enabled = excluded.enabled,
                 parameters_json = excluded.parameters_json,
                 http_json = excluded.http_json,
+                local_json = excluded.local_json,
                 updated_at = excluded.updated_at",
             params![
                 input.name,
@@ -87,6 +93,7 @@ impl Storage {
                 i64::from(input.enabled),
                 parameters_json,
                 http_json,
+                local_json,
                 now
             ],
         )?;

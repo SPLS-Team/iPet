@@ -123,6 +123,17 @@ function autoSystemStatusText(state, draft) {
     : "未启用。开启后 iPet 会定期检查 CPU、内存和进程状态。";
 }
 
+function renderToolRuntimeBadge(tool) {
+  if (tool.http) {
+    return `<span>${escapeHtml(tool.http.method)} ${escapeHtml(tool.http.url)}</span>`;
+  }
+  if (tool.local) {
+    const cmd = [tool.local.command, ...(tool.local.args ?? [])].join(" ");
+    return `<span>${escapeHtml(cmd)}</span>`;
+  }
+  return "";
+}
+
 function renderToolsTab(state) {
   const tools = state.tools ?? [];
   const cards = tools
@@ -143,6 +154,7 @@ function renderToolsTab(state) {
         <div class="tool-meta">
           <span>${tool.builtIn ? "内置" : "自定义"}</span>
           <span>${escapeHtml(tool.kind)}</span>
+          ${renderToolRuntimeBadge(tool)}
         </div>
         <details>
           <summary>工具 schema</summary>
@@ -220,6 +232,60 @@ function renderToolsTab(state) {
           <span>name 必须是函数名格式；parameters 必须是 JSON Schema object；HTTP 工具会把模型参数作为 JSON body 发送，GET 会转为 query。</span>
         </div>
         <button class="text-button primary" type="submit">添加或更新工具</button>
+      </form>
+      <form class="tool-form" data-role="local-tool-form">
+        <h3>添加本地工具</h3>
+        <p class="hint">
+          本地工具是本机可执行文件或脚本（.exe / .py / .js / .bat …）。调用时把模型参数作为一行
+          JSON 写到子进程 stdin，stdout 的内容作为返回值。详见
+          <code>docs/TOOL_PACKAGE.md</code> §local。
+        </p>
+        <label>
+          <span>工具名称</span>
+          <input name="name" placeholder="my_local_tool" />
+        </label>
+        <label>
+          <span>显示名</span>
+          <input name="displayName" placeholder="本地工具" />
+        </label>
+        <label>
+          <span>描述</span>
+          <textarea name="description" rows="3" placeholder="说明模型何时应该调用这个工具"></textarea>
+        </label>
+        <label>
+          <span>命令 (command)</span>
+          <input name="command" placeholder="python / node / C:/tools/my_tool.exe" />
+        </label>
+        <label>
+          <span>参数 (args，空格分隔，可选)</span>
+          <input name="args" placeholder="script.py --flag" />
+        </label>
+        <label>
+          <span>工作目录 (cwd，可选)</span>
+          <input name="cwd" placeholder="C:/.../tool-dir" />
+        </label>
+        <div class="settings-grid">
+          <label>
+            <span>超时(秒)</span>
+            <input name="timeoutSecs" type="number" min="1" max="300" value="30" />
+          </label>
+          <label>
+            <span>启用</span>
+            <select name="enabled">
+              <option value="true">是</option>
+              <option value="false">否</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>Parameters JSON Schema</span>
+          <textarea name="parameters" rows="6">${escapeHtml(DEFAULT_SCHEMA)}</textarea>
+        </label>
+        <div class="tool-format">
+          <strong>stdio 协议</strong>
+          <span>子进程从 stdin 读取一行 JSON（模型参数对象），把结果写到 stdout。非零退出码或超时会被当作错误。</span>
+        </div>
+        <button class="text-button primary" type="submit">添加或更新本地工具</button>
       </form>
     </div>
   `;
@@ -321,6 +387,28 @@ function bindToolsTab(container, handlers) {
       },
     });
   });
+  const localForm = container.querySelector('[data-role="local-tool-form"]');
+  if (localForm) {
+    localForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const argsRaw = form.elements.args.value.trim();
+      handlers.onSaveTool({
+        name: form.elements.name.value.trim(),
+        displayName: form.elements.displayName.value.trim(),
+        description: form.elements.description.value.trim(),
+        kind: "local",
+        enabled: form.elements.enabled.value === "true",
+        parametersRaw: form.elements.parameters.value,
+        local: {
+          command: form.elements.command.value.trim(),
+          args: argsRaw ? argsRaw.split(/\s+/) : [],
+          cwd: form.elements.cwd.value.trim() || null,
+          timeoutSecs: Number.parseInt(form.elements.timeoutSecs.value, 10) || 30,
+        },
+      });
+    });
+  }
 
   const importForm = container.querySelector('[data-role="import-form"]');
   if (importForm) {

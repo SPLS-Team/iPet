@@ -403,20 +403,31 @@ async function deleteTool(name) {
 async function saveTool(raw) {
   try {
     const parameters = JSON.parse(raw.parametersRaw);
-    const headers = JSON.parse(raw.http.headersRaw || "[]");
     const input = {
       name: raw.name,
       displayName: raw.displayName,
       description: raw.description,
-      kind: "http",
+      kind: raw.kind,
       enabled: raw.enabled,
       parameters,
-      http: {
+    };
+    if (raw.kind === "http") {
+      const headers = JSON.parse(raw.http.headersRaw || "[]");
+      input.http = {
         method: raw.http.method,
         url: raw.http.url,
         headers,
-      },
-    };
+      };
+    } else if (raw.kind === "local") {
+      input.local = {
+        command: raw.local.command,
+        args: raw.local.args ?? [],
+        cwd: raw.local.cwd || null,
+        timeoutSecs: raw.local.timeoutSecs ?? 30,
+      };
+    } else {
+      throw new Error(`未知工具类型：${raw.kind}`);
+    }
     await invoke("save_tool", { input });
     await loadTools();
     state.toolStatus = "工具已保存";
