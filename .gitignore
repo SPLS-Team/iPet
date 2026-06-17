@@ -6,3 +6,7 @@ src-tauri/gen/
 *.tmp
 .DS_Store
 
+# Build / release artifacts (use GitHub Releases for distribution)
+iPet-portable/
+iPet-portable.zip
+iPet-release.zip
