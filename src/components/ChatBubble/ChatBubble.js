@@ -2,7 +2,7 @@ import { escapeHtml, renderMarkdown } from "../../markdown.js";
 
 export function renderChat(container, state, handlers) {
   const messages = state.messages
-    .map(renderMessage)
+    .map((message, idx) => renderMessage(message, idx === state.messages.length - 1))
     .join("");
 
   const thinkingText = state.thinkingStartedAt ? `思考 ${formatElapsed(state.thinkingElapsedMs)}` : "";
@@ -29,6 +29,10 @@ export function renderChat(container, state, handlers) {
       </div>
     </section>
   `;
+
+  // Remember what we drew so updateChatStreaming() can decide whether the
+  // fast-path patch is still valid (no new messages, no role swap).
+  container.dataset.renderedCount = String(state.messages.length);
 
   const form = container.querySelector('[data-role="form"]');
   form.addEventListener("submit", (event) => {
@@ -59,7 +63,31 @@ export function renderChat(container, state, handlers) {
   messageList.scrollTop = messageList.scrollHeight;
 }
 
-function renderMessage(message) {
+/// Streaming fast path: re-render only the last assistant bubble's content
+/// instead of rebuilding the entire message list. Returns true if the patch
+/// applied; false if the caller should fall back to a full renderChat() (e.g.
+/// the chat panel isn't mounted, the message count changed, or the last
+/// message isn't from the assistant).
+export function updateChatStreaming(container, state) {
+  if (!container) return false;
+  const messageList = container.querySelector('[data-role="messages"]');
+  if (!messageList) return false;
+
+  const expectedCount = Number(container.dataset.renderedCount || 0);
+  if (expectedCount !== state.messages.length) return false;
+
+  const last = state.messages[state.messages.length - 1];
+  if (!last || last.role !== "assistant") return false;
+
+  const lastBubble = messageList.querySelector(".message-row:last-child .message-text");
+  if (!lastBubble) return false;
+
+  lastBubble.innerHTML = renderMarkdown(last.content);
+  messageList.scrollTop = messageList.scrollHeight;
+  return true;
+}
+
+function renderMessage(message, _isLast) {
   const role = message.role === "user" ? "user" : "assistant";
   const label = role === "user" ? "你" : "iPet";
   const avatar = role === "user" ? "你" : "iP";

@@ -1,6 +1,6 @@
 import { appWindow, invoke, listen } from "./tauriBridge.js";
 import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
-import { renderChat } from "./components/ChatBubble/ChatBubble.js";
+import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
 import { renderSettings } from "./components/SettingsPanel/SettingsPanel.js";
 import "./styles.css";
 
@@ -141,7 +141,12 @@ async function bindChatEvents() {
       appendAssistantDelta(payload.content);
       state.chatStatus = "";
       pet.setMood("talking");
-      shouldRender = true;
+      // Fast path: just patch the last assistant bubble. Skip the full render
+      // (rebuilds every message + re-binds the form) which gets quadratic on
+      // long chats during streaming.
+      const panel = document.querySelector("#panel");
+      const patched = state.activeTab === "chat" && updateChatStreaming(panel, state);
+      if (!patched) shouldRender = true;
     } else if (payload.kind === "done") {
       state.chatBusy = false;
       state.chatStatus = "";
