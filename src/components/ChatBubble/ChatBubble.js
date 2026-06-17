@@ -16,7 +16,7 @@ export function renderChat(container, state, handlers) {
         <textarea
           name="prompt"
           rows="2"
-          placeholder="问 iPet..."
+          placeholder="Enter 发送，Shift+Enter 换行"
           ${state.chatBusy ? "disabled" : ""}
         ></textarea>
         <button class="icon-button primary" type="submit" ${state.chatBusy ? "disabled" : ""} title="发送">
@@ -30,14 +30,30 @@ export function renderChat(container, state, handlers) {
     </section>
   `;
 
-  container.querySelector('[data-role="form"]').addEventListener("submit", (event) => {
+  const form = container.querySelector('[data-role="form"]');
+  form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const input = event.currentTarget.elements.prompt;
+    submitPrompt(form);
+  });
+
+  // Enter sends, Shift+Enter (or any modifier) inserts a newline. IME
+  // composition still uses Enter to commit candidates; isComposing skips that.
+  const textarea = form.elements.prompt;
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    submitPrompt(form);
+  });
+
+  function submitPrompt(formEl) {
+    const input = formEl.elements.prompt;
     const value = input.value.trim();
     if (!value) return;
     input.value = "";
     handlers.onSend(value);
-  });
+  }
 
   const messageList = container.querySelector('[data-role="messages"]');
   messageList.scrollTop = messageList.scrollHeight;

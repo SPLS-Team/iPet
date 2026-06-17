@@ -285,7 +285,12 @@ function bindToolsTab(container, handlers) {
     });
   });
   container.querySelectorAll("[data-delete-tool]").forEach((button) => {
-    button.addEventListener("click", () => handlers.onDeleteTool(button.dataset.deleteTool));
+    button.addEventListener("click", () => {
+      const name = button.dataset.deleteTool;
+      const ok = window.confirm(`确认删除工具「${name}」？此操作不可撤销。`);
+      if (!ok) return;
+      handlers.onDeleteTool(name);
+    });
   });
   container.querySelector('[data-role="tool-form"]').addEventListener("submit", (event) => {
     event.preventDefault();
