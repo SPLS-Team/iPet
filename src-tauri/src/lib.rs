@@ -12,7 +12,7 @@ mod tool_dispatcher;
 use app_error::{public_error, AppError, AppResult};
 use config::{LlmSettingsInput, LlmSettingsStatus};
 use disk_scanner::{DiskScanRequest, DiskScanResult};
-use llm_client::{ChatRequest, LlmClient, PreparedTurn, TokenUsage};
+use llm_client::{ChatRequest, ChatTurnResult, LlmClient};
 use serde::Serialize;
 use std::sync::Arc;
 use storage::{ChatRecord, Storage, TokenUsageStats, ToolConfig, ToolConfigInput};
@@ -213,39 +213,39 @@ async fn send_chat_message_inner(
     let settings = state.storage.load_llm_settings()?;
     let client = LlmClient::new(settings)?;
     let dispatcher = ToolDispatcher::new(state.system.clone(), state.storage.clone());
-    let mut usage_total = TokenUsage::default();
-    let mut tool_call_count = 0usize;
+    let has_tools = !dispatcher.active_definitions()?.is_empty();
 
-    let assistant_text = match client
-        .prepare_turn_with_tools(&request.messages, &dispatcher)
-        .await?
-    {
-        PreparedTurn::DirectText { text, usage } => {
-            usage_total.add(usage.as_ref());
-            emit_text_as_chunks(&window, &request.request_id, &text).await?;
-            text
-        }
-        PreparedTurn::ToolAugmented {
-            messages,
-            usage,
-            tool_call_count: calls,
-        } => {
-            usage_total.add(usage.as_ref());
-            tool_call_count = calls;
+    // Two paths:
+    // - No tools active → stream tokens straight from the model for snappy UX.
+    // - Tools active → run the multi-round tool loop (non-streaming), then
+    //   fake-stream the final text so the UI still feels alive. We can't
+    //   stream during the loop because tool_calls arrive interleaved with
+    //   content chunks and the OpenAI streaming format doesn't let us tell
+    //   "this turn wants tools" until the stream finishes.
+    let ChatTurnResult {
+        text: assistant_text,
+        usage: usage_total,
+        tool_call_count,
+    } = if has_tools {
+        let result = client
+            .complete_with_tool_loop(&request.messages, &dispatcher)
+            .await?;
+        if result.tool_call_count > 0 {
             emit_chat_event(&window, &request.request_id, "tool", "本地工具已执行")?;
-            let stream_result = client
-                .stream_final_response(messages, |delta| {
-                    let window = window.clone();
-                    let request_id = request.request_id.clone();
-                    async move {
-                        emit_chat_event(&window, &request_id, "delta", &delta)?;
-                        Ok(())
-                    }
-                })
-                .await?;
-            usage_total.add(stream_result.usage.as_ref());
-            stream_result.text
         }
+        emit_text_as_chunks(&window, &request.request_id, &result.text).await?;
+        result
+    } else {
+        client
+            .stream_simple(&request.messages, |delta| {
+                let window = window.clone();
+                let request_id = request.request_id.clone();
+                async move {
+                    emit_chat_event(&window, &request_id, "delta", &delta)?;
+                    Ok(())
+                }
+            })
+            .await?
     };
 
     if usage_total.total_tokens > 0 {

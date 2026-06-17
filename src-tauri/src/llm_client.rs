@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::future::Future;
 
+/// Upper bound on tool-call rounds. The final allowed round drops tools from
+/// the request so the model is forced to produce a text answer instead of
+/// asking for yet another tool call.
+const MAX_TOOL_ROUNDS: usize = 6;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatUiMessage {
@@ -37,23 +42,12 @@ impl TokenUsage {
     }
 }
 
-#[derive(Debug)]
-pub enum PreparedTurn {
-    DirectText {
-        text: String,
-        usage: Option<TokenUsage>,
-    },
-    ToolAugmented {
-        messages: Vec<OpenAiMessage>,
-        usage: Option<TokenUsage>,
-        tool_call_count: usize,
-    },
-}
-
-#[derive(Debug)]
-pub struct StreamResult {
+/// Result of running a full chat turn (with or without tools).
+#[derive(Debug, Default)]
+pub struct ChatTurnResult {
     pub text: String,
-    pub usage: Option<TokenUsage>,
+    pub usage: TokenUsage,
+    pub tool_call_count: usize,
 }
 
 pub struct LlmClient {
@@ -84,30 +78,75 @@ impl LlmClient {
         &self.settings.model
     }
 
-    pub async fn prepare_turn_with_tools(
+    /// Drive a chat turn through repeated tool calls until the model returns
+    /// a plain text reply or the round cap is hit.
+    ///
+    /// Behavior:
+    /// - Each round sends a non-streaming `chat/completions` request with the
+    ///   active tool definitions and `tool_choice = "auto"`.
+    /// - If the response carries `tool_calls`, every call is dispatched
+    ///   serially (tool errors are surfaced to the model as a JSON `{"error":
+    ///   "..."}` payload so it can adapt instead of failing the whole turn),
+    ///   the assistant + tool messages are appended, and the loop repeats.
+    /// - If the response contains no tool calls, the loop returns the text.
+    /// - The last allowed round drops tools from the request, forcing a text
+    ///   answer even when the model keeps asking for more tools.
+    ///
+    /// Tokens are summed across all rounds.
+    pub async fn complete_with_tool_loop(
         &self,
         ui_messages: &[ChatUiMessage],
         dispatcher: &ToolDispatcher,
-    ) -> AppResult<PreparedTurn> {
+    ) -> AppResult<ChatTurnResult> {
         let mut messages = self.build_messages(ui_messages);
         let tools = dispatcher.active_definitions()?;
-        let response = if tools.is_empty() {
-            self.complete_once(&messages, None, None).await?
-        } else {
-            self.complete_once(&messages, Some(tools), Some(json!("auto")))
-                .await?
-        };
+        let has_tools = !tools.is_empty();
 
-        let usage = response.usage.clone();
-        let choice = response
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::Model("模型没有返回候选结果".to_string()))?;
-        let message = choice.message;
+        let mut usage_total = TokenUsage::default();
+        let mut tool_call_count = 0usize;
 
-        if let Some(tool_calls) = message.tool_calls.filter(|calls| !calls.is_empty()) {
-            let tool_call_count = tool_calls.len();
+        for round in 0..MAX_TOOL_ROUNDS {
+            // Final allowed round: drop tools so the model must reply with
+            // text. Without this guard, a misbehaving model could keep asking
+            // for tools until we hit the cap and then error out.
+            let allow_tools = has_tools && round + 1 < MAX_TOOL_ROUNDS;
+            let response = if allow_tools {
+                self.complete_once(&messages, Some(tools.clone()), Some(json!("auto")))
+                    .await?
+            } else {
+                self.complete_once(&messages, None, None).await?
+            };
+
+            usage_total.add(response.usage.as_ref());
+            let choice = response.choices.into_iter().next().ok_or_else(|| {
+                AppError::Model("模型没有返回候选结果".to_string())
+            })?;
+            let message = choice.message;
+
+            let pending_calls = message
+                .tool_calls
+                .as_ref()
+                .map(|c| !c.is_empty())
+                .unwrap_or(false);
+
+            if !pending_calls {
+                let text = message.content.unwrap_or_default();
+                tracing::debug!(
+                    rounds = round + 1,
+                    tool_calls = tool_call_count,
+                    chars = text.chars().count(),
+                    "chat loop converged"
+                );
+                return Ok(ChatTurnResult {
+                    text,
+                    usage: usage_total,
+                    tool_call_count,
+                });
+            }
+
+            let tool_calls = message.tool_calls.unwrap_or_default();
+            tool_call_count += tool_calls.len();
+
             messages.push(OpenAiMessage {
                 role: "assistant".to_string(),
                 content: message.content,
@@ -116,9 +155,19 @@ impl LlmClient {
             });
 
             for call in tool_calls {
-                let result = dispatcher
+                let result = match dispatcher
                     .dispatch(&call.function.name, &call.function.arguments)
-                    .await?;
+                    .await
+                {
+                    Ok(json) => json,
+                    Err(err) => {
+                        // Don't abort the whole turn — feed the error back to
+                        // the model so it can apologize or try a different
+                        // approach. ToolDispatcher::dispatch already logs the
+                        // failure at warn! level.
+                        json!({ "error": err.to_string() }).to_string()
+                    }
+                };
                 messages.push(OpenAiMessage {
                     role: "tool".to_string(),
                     content: Some(result),
@@ -126,21 +175,37 @@ impl LlmClient {
                     tool_calls: None,
                 });
             }
-
-            Ok(PreparedTurn::ToolAugmented {
-                messages,
-                usage,
-                tool_call_count,
-            })
-        } else {
-            Ok(PreparedTurn::DirectText {
-                text: message.content.unwrap_or_default(),
-                usage,
-            })
         }
+
+        // The loop body always returns when round + 1 == MAX_TOOL_ROUNDS, so
+        // this is unreachable. Keep an explicit error for safety.
+        Err(AppError::Model(format!(
+            "工具调用未在 {MAX_TOOL_ROUNDS} 轮内收敛"
+        )))
     }
 
-    pub async fn stream_final_response<F, Fut>(
+    /// Stream a response without using any tools. Used by the no-tools fast
+    /// path where we don't need to inspect the response mid-stream for tool
+    /// calls.
+    pub async fn stream_simple<F, Fut>(
+        &self,
+        ui_messages: &[ChatUiMessage],
+        on_delta: F,
+    ) -> AppResult<ChatTurnResult>
+    where
+        F: FnMut(String) -> Fut,
+        Fut: Future<Output = AppResult<()>>,
+    {
+        let messages = self.build_messages(ui_messages);
+        let stream = self.stream_messages(messages, on_delta).await?;
+        Ok(ChatTurnResult {
+            text: stream.text,
+            usage: stream.usage.unwrap_or_default(),
+            tool_call_count: 0,
+        })
+    }
+
+    async fn stream_messages<F, Fut>(
         &self,
         messages: Vec<OpenAiMessage>,
         mut on_delta: F,
@@ -278,6 +343,11 @@ impl LlmClient {
     fn chat_completions_url(&self) -> String {
         format!("{}/chat/completions", self.settings.normalized_base_url())
     }
+}
+
+struct StreamResult {
+    text: String,
+    usage: Option<TokenUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
