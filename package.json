@@ -1,0 +1,24 @@
+{
+  "name": "ipet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "dompurify": "^3.4.10",
+    "marked": "^18.0.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.0",
+    "esbuild": "^0.28.1",
+    "vite": "^8.0.16"
+  }
+}

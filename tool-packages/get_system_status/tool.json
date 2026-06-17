@@ -1,0 +1,34 @@
+{
+  "name": "get_system_status",
+  "displayName": "系统状态",
+  "description": "获取当前 CPU、内存、磁盘和高占用进程概览。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "src-tauri/src/system_monitor.rs"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "process_limit": {
+        "type": "integer",
+        "minimum": 3,
+        "maximum": 30,
+        "default": 10,
+        "description": "返回的高占用进程数量。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": [
+    "system.cpu.read",
+    "system.memory.read",
+    "system.disk.read",
+    "system.process.read"
+  ]
+}
+

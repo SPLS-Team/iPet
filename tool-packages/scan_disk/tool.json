@@ -1,0 +1,48 @@
+{
+  "name": "scan_disk",
+  "displayName": "磁盘扫描",
+  "description": "扫描指定目录，按占用大小返回主要子目录和文件。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "src-tauri/src/disk_scanner.rs"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["path"],
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要扫描的本地目录绝对路径。"
+      },
+      "max_depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 12,
+        "default": 4,
+        "description": "递归展示深度。"
+      },
+      "max_children": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 64,
+        "default": 12,
+        "description": "每层最多返回多少个子节点。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": [
+    "filesystem.read"
+  ],
+  "safety": {
+    "readOnly": true,
+    "followsSymlinks": false,
+    "notes": "大目录扫描可能耗时较长，建议由前端展示忙碌状态。"
+  }
+}
+

@@ -1,0 +1,20 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_system_status",
+    "description": "获取当前 CPU、内存、磁盘和高占用进程概览。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "process_limit": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 30,
+          "description": "返回的高占用进程数量。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+
