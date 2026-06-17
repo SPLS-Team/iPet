@@ -9,6 +9,7 @@ mod system_monitor;
 #[cfg(test)]
 mod testutil;
 mod tool_dispatcher;
+mod tool_package;
 
 use app_error::{public_error, AppError, AppResult};
 use config::{LlmSettingsInput, LlmSettingsStatus};
@@ -180,6 +181,21 @@ fn set_tool_enabled(
 #[tauri::command]
 fn delete_tool(name: String, state: State<'_, AppState>) -> Result<(), String> {
     state.storage.delete_tool(&name).map_err(public_error)
+}
+
+#[tauri::command]
+fn import_tool_from_path(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<ToolConfig, String> {
+    let pkg = tool_package::load_package(std::path::Path::new(&path)).map_err(public_error)?;
+    tracing::info!(
+        tool = %pkg.input.name,
+        version = pkg.version.as_deref().unwrap_or("-"),
+        permissions = ?pkg.permissions,
+        "importing tool package"
+    );
+    state.storage.save_custom_tool(pkg.input).map_err(public_error)
 }
 
 #[tauri::command]
@@ -479,6 +495,7 @@ pub fn run() {
             save_tool,
             set_tool_enabled,
             delete_tool,
+            import_tool_from_path,
             get_token_stats,
             send_chat_message,
             set_always_on_top,

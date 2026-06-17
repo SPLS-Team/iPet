@@ -159,6 +159,18 @@ function renderToolsTab(state) {
       <div class="tool-list">
         ${cards || '<div class="empty-state">暂无工具</div>'}
       </div>
+      <form class="tool-form" data-role="import-form">
+        <h3>导入工具包</h3>
+        <p class="hint">
+          指定一个目录或 <code>tool.json</code> 文件路径，从 schema v1
+          工具包导入（结构参见 <code>docs/TOOL_PACKAGE.md</code>）。
+        </p>
+        <label>
+          <span>路径</span>
+          <input name="packagePath" placeholder="C:/.../my-tool" />
+        </label>
+        <button class="action-button" type="submit">导入</button>
+      </form>
       <form class="tool-form" data-role="tool-form">
         <h3>添加 HTTP 工具</h3>
         <label>
@@ -309,6 +321,16 @@ function bindToolsTab(container, handlers) {
       },
     });
   });
+
+  const importForm = container.querySelector('[data-role="import-form"]');
+  if (importForm) {
+    importForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const path = event.currentTarget.elements.packagePath.value.trim();
+      if (!path) return;
+      handlers.onImportTool(path);
+    });
+  }
 }
 
 function bindStatsTab(container, handlers) {

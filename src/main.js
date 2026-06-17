@@ -226,6 +226,7 @@ function render() {
       onSetToolEnabled: setToolEnabled,
       onDeleteTool: deleteTool,
       onSaveTool: saveTool,
+      onImportTool: importTool,
       onRefreshStats: refreshStats,
     });
   }
@@ -421,6 +422,19 @@ async function saveTool(raw) {
     state.toolStatus = "工具已保存";
   } catch (error) {
     state.toolStatus = `工具保存失败：${String(error)}`;
+  }
+  render();
+}
+
+async function importTool(path) {
+  state.toolStatus = `正在从 ${path} 导入...`;
+  render();
+  try {
+    const tool = await invoke("import_tool_from_path", { path });
+    await loadTools();
+    state.toolStatus = `已导入工具：${tool.displayName}`;
+  } catch (error) {
+    state.toolStatus = `导入失败：${String(error)}`;
   }
   render();
 }
