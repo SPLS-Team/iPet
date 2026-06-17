@@ -577,6 +577,25 @@ impl Storage {
         Ok(())
     }
 
+    /// Persist an arbitrary string under an arbitrary key. Used for UI-side
+    /// state like "the window size the user had before going compact" that
+    /// doesn't deserve its own table.
+    pub fn set_session_value(&self, key: &str, value: &str) -> AppResult<()> {
+        self.set_preference(key, value)
+    }
+
+    pub fn get_session_value(&self, key: &str) -> AppResult<Option<String>> {
+        let conn = self.lock()?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM preferences WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value)
+    }
+
     fn lock(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
         self.conn
             .lock()

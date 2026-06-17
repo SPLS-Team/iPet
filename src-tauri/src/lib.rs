@@ -165,12 +165,53 @@ fn start_window_drag(window: Window) -> Result<(), String> {
 
 #[tauri::command]
 fn set_compact_window(window: Window, enabled: bool) -> Result<(), String> {
-    let size = if enabled {
-        LogicalSize::new(148.0, 166.0)
+    // Compact mode shrinks to a small puck the user can drag around. Before
+    // shrinking, record the current window size on the window's local state
+    // so toggling back can restore exactly what the user had — instead of
+    // snapping every expand back to the original 440x720 default.
+    const STATE_KEY: &str = "ipet:expanded-size";
+
+    if enabled {
+        if let Ok(size) = window.outer_size() {
+            if let Ok(scale) = window.scale_factor() {
+                let logical = size.to_logical::<f64>(scale);
+                // We tuck the previous size into the app's storage via the
+                // window label; using the global state object keeps this
+                // platform-agnostic without a new persistent table.
+                let key = format!("{STATE_KEY}:{}", window.label());
+                if let Some(app) = window.try_state::<AppState>() {
+                    let _ = app.storage.set_session_value(
+                        &key,
+                        &format!("{},{}", logical.width, logical.height),
+                    );
+                }
+            }
+        }
+        window
+            .set_size(LogicalSize::new(148.0, 166.0))
+            .map_err(|error| error.to_string())
     } else {
-        LogicalSize::new(440.0, 720.0)
-    };
-    window.set_size(size).map_err(|error| error.to_string())
+        let (width, height) = window
+            .try_state::<AppState>()
+            .and_then(|app| {
+                let key = format!("{STATE_KEY}:{}", window.label());
+                app.storage.get_session_value(&key).ok().flatten()
+            })
+            .and_then(|raw| {
+                let mut parts = raw.splitn(2, ',');
+                let w = parts.next()?.parse::<f64>().ok()?;
+                let h = parts.next()?.parse::<f64>().ok()?;
+                if w >= 200.0 && h >= 200.0 {
+                    Some((w, h))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((440.0, 720.0));
+        window
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|error| error.to_string())
+    }
 }
 
 fn get_llm_settings_inner(state: &State<'_, AppState>) -> AppResult<LlmSettingsStatus> {
