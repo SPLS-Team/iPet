@@ -122,4 +122,15 @@ describe("AppShell view dispatch", () => {
       expect(root.querySelector(".control-nav").innerHTML).not.toBe("");
     }
   });
+
+  it("control panel does not carry the .panel class (would override overflow:auto and block scroll)", () => {
+    const { ctx } = makeCtx("control");
+    ctx.state.controlSection = "model";
+    ctx.state.settingsDraft = { baseUrl: "https://x", model: "m", temperature: 0.7, maxContextMessages: 18, systemPrompt: "", autoSystemCheckEnabled: false, autoSystemCheckIntervalMinutes: 10 };
+    ctx.state.handlers = { ...ctx.handlers, onSaveSettings: () => {}, onToggleTop: () => {}, onTemporaryPassthrough: () => {}, onGoCapsule: () => {}, onRunSystemCheck: () => {}, onSetTheme: () => {}, onSetPlatformStyle: () => {}, onSetDensity: () => {}, onSetReduceMotion: () => {}, onRefreshStats: () => {}, onSetToolEnabled: () => {}, onDeleteTool: () => {}, onSaveTool: () => {}, onImportTool: () => {}, onSetComposerMode: () => {} };
+    renderAppShell(root, ctx);
+    const panel = root.querySelector("#panel");
+    expect(panel.classList.contains("control-panel")).toBe(true);
+    expect(panel.classList.contains("panel")).toBe(false);
+  });
 });

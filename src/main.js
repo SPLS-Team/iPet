@@ -198,13 +198,49 @@ function render() {
 
 /* -------------------------------------------------------------------------- */
 /* View-mode navigation (ref-plan §4.3)                                       */
+/*                                                                            */
+/* Window sizing rule (was the bug source): only crossing the *capsule*       */
+/* boundary changes the window size — talk↔control switches leave the window   */
+/* alone. Entering the Control Center widens the window up to the sidebar     */
+/* layout threshold (≥720px) so the left nav is actually visible; leaving it  */
+/* keeps whatever size the user has, instead of snapping back to a stale saved*/
+/* value (which is what the old unconditional setCompact(false) did).         */
 /* -------------------------------------------------------------------------- */
 
+// Width below which the Control Center collapses to the segmented (no-sidebar)
+// nav. Matches the @media (min-width: 720px) breakpoint in responsive.css.
+const CONTROL_SIDEBAR_WIDTH = 720;
+
 async function setViewMode(mode) {
+  const wasCapsule = state.viewMode === "capsule";
+  const isCapsule = mode === "capsule";
   state.viewMode = mode;
-  state.compactMode = mode === "capsule";
-  await appWindow.setCompact(state.compactMode);
+  state.compactMode = isCapsule;
+
+  // Only resize when crossing the capsule boundary. talk↔control must NOT
+  // touch the window — that was forcing the window to a stale narrow size on
+  // every return to talk.
+  if (wasCapsule !== isCapsule) {
+    await appWindow.setCompact(isCapsule);
+  }
+
+  // Entering the Control Center from a narrow window: widen so the sidebar
+  // nav is visible. (Height unchanged.)
+  if (mode === "control" && !wasCapsule) {
+    await ensureControlSidebarWidth();
+  }
+
   render();
+}
+
+/** If the window is narrower than the sidebar threshold, grow it to 720px so
+ *  the Control Center's left nav shows. No-op in browser preview. */
+async function ensureControlSidebarWidth() {
+  const size = await appWindow.innerSize();
+  if (!size) return;
+  if (size.width < CONTROL_SIDEBAR_WIDTH) {
+    await appWindow.setInnerSize(CONTROL_SIDEBAR_WIDTH, Math.max(size.height, 720));
+  }
 }
 
 function toggleControl() {
@@ -216,7 +252,7 @@ async function setControlSection(section) {
   if (state.viewMode !== "control") {
     state.viewMode = "control";
     state.compactMode = false;
-    await appWindow.setCompact(false);
+    await ensureControlSidebarWidth();
   }
   if (section === "tools") await loadToolsSafely();
   if (section === "usage") await refreshStatsSilently();
@@ -236,7 +272,7 @@ async function sendMessage(content) {
     state.viewMode = "control";
     state.compactMode = false;
     state.settingsStatus = "请先保存 API Key";
-    await appWindow.setCompact(false);
+    await ensureControlSidebarWidth();
     pet.setMood("thinking");
     render();
     return;

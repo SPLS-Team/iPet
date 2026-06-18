@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 
 const isTauri = Boolean(window.__TAURI_INTERNALS__);
 
@@ -31,6 +32,20 @@ export const appWindow = {
   },
   setCompact(enabled) {
     if (isTauri) return tauriInvoke("set_compact_window", { enabled });
+  },
+  /** Inner (client-area) size in logical pixels. Returns null in browser preview. */
+  async innerSize() {
+    if (!isTauri) return null;
+    const win = getCurrentWindow();
+    const size = await win.innerSize();
+    const factor = await win.scaleFactor();
+    const logical = size.toLogical(factor);
+    return { width: logical.width, height: logical.height };
+  },
+  /** Set the inner client-area size in logical pixels. No-op in browser preview. */
+  async setInnerSize(width, height) {
+    if (!isTauri) return;
+    await getCurrentWindow().setSize(new LogicalSize(width, height));
   },
 };
 

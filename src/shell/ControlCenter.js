@@ -23,7 +23,7 @@ const SECTIONS = [
 export function renderControlCenter(_ctx) {
   return `
     <nav class="control-nav" aria-label="控制中心" role="tablist" data-role="control-nav"></nav>
-    <section id="panel" class="panel control-panel" data-role="control-panel"></section>
+    <section id="panel" class="control-panel" data-role="control-panel"></section>
   `;
 }
 

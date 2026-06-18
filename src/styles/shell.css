@@ -211,9 +211,14 @@
   text-align: center;
 }
 
-/* Control Center content scrolls independently of the titlebar. */
+/* Control Center content scrolls independently of the titlebar. Note: this
+   element does NOT carry the `.panel` class — `.panel` sets overflow:hidden
+   (chat.css) and, being imported later, would win the cascade and kill
+   scrolling here. min-height:0 lets the grid track clamp its height. */
 .control-panel {
+  min-height: 0;
   overflow: auto;
+  background: transparent;
 }
 
 /* Control Center navigation — segmented bar on narrow windows, sidebar on wide
