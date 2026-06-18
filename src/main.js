@@ -1,10 +1,12 @@
 import { appWindow, invoke, listen } from "./tauriBridge.js";
+import { escapeHtml } from "./markdown.js";
 import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
 import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
 import { renderSettings } from "./components/SettingsPanel/SettingsPanel.js";
 import "./styles.css";
 
 const state = {
+  platform: detectPlatform(),
   activeTab: "chat",
   settingsTab: "model",
   messages: [],
@@ -15,8 +17,10 @@ const state = {
   toolStatus: "",
   stats: null,
   statsStatus: "",
+  lastStatsRefreshAt: null,
   chatBusy: false,
   chatStatus: "",
+  toolActivity: "",
   currentRequestId: null,
   alwaysOnTop: true,
   compactMode: false,
@@ -26,6 +30,9 @@ const state = {
   autoSystemCheckTimer: null,
   autoSystemCheckBusy: false,
   autoSystemStatus: "",
+  toast: null,
+  toastTimer: null,
+  dialog: null,
 };
 
 let pet;
@@ -34,7 +41,19 @@ let compactDragStarted = false;
 
 bootstrap();
 
+/** Lightweight platform detection (ui-plan.md §5.0). No new deps. */
+function detectPlatform() {
+  const platform = navigator.userAgentData?.platform || navigator.platform || "";
+  const value = String(platform).toLowerCase();
+  if (value.includes("mac")) return "macos";
+  if (value.includes("win")) return "windows";
+  if (value.includes("linux")) return "linux";
+  return "unknown";
+}
+
 async function bootstrap() {
+  document.documentElement.dataset.platform = state.platform;
+
   document.querySelector("#app").innerHTML = `
     <main class="app-shell">
       <header class="titlebar" data-tauri-drag-region>
@@ -43,7 +62,7 @@ async function bootstrap() {
           <span data-tauri-drag-region>iPet</span>
         </div>
         <div class="window-actions">
-          <button class="window-button" data-action="compact" title="收起" aria-label="收起">◱</button>
+          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">◱</button>
           <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">−</button>
           <button class="window-button danger" data-action="close" title="关闭" aria-label="关闭">×</button>
         </div>
@@ -51,11 +70,12 @@ async function bootstrap() {
       <section class="pet-wrap">
         <div id="pet"></div>
       </section>
-      <nav class="tabbar" aria-label="main">
-        <button class="tab active" data-tab="chat"><span>✦</span>聊天</button>
-        <button class="tab" data-tab="settings"><span>⚙</span>设置</button>
+      <nav class="tabbar" aria-label="main" role="tablist">
+        <button class="tab active" data-tab="chat" role="tab" aria-selected="true"><span>✦</span>聊天</button>
+        <button class="tab" data-tab="settings" role="tab" aria-selected="false"><span>⚙</span>设置</button>
       </nav>
       <section id="panel" class="panel"></section>
+      <div id="overlay" class="overlay" aria-live="polite"></div>
     </main>
   `;
 
@@ -66,6 +86,15 @@ async function bootstrap() {
   render();
   scheduleAutoSystemCheck({ runNow: true });
 }
+
+// Esc closes the active (non-danger-confirmable) dialog. Danger dialogs also
+// close on Esc — canceling is safe; the destructive action only runs on confirm.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.dialog) {
+    event.preventDefault();
+    closeDialog(false);
+  }
+});
 
 function bindShellEvents() {
   document.querySelector(".titlebar").addEventListener("mousedown", (event) => {
@@ -132,12 +161,15 @@ async function bindChatEvents() {
     let shouldRender = false;
     if (payload.kind === "start") {
       beginThinking("思考中");
+      state.toolActivity = "";
       pet.setMood("thinking");
     } else if (payload.kind === "tool") {
-      beginThinking(payload.content || "正在使用工具");
-      pet.setMood("thinking");
+      state.toolActivity = payload.content || "正在使用工具";
+      beginThinking(state.toolActivity);
+      pet.setMood("tool");
     } else if (payload.kind === "delta") {
       stopThinking();
+      state.toolActivity = "";
       appendAssistantDelta(payload.content);
       state.chatStatus = "";
       pet.setMood("talking");
@@ -150,6 +182,7 @@ async function bindChatEvents() {
     } else if (payload.kind === "done") {
       state.chatBusy = false;
       state.chatStatus = "";
+      state.toolActivity = "";
       stopThinking();
       pet.setMood("idle");
       refreshStatsSilently();
@@ -205,13 +238,16 @@ async function refreshStatsSilently() {
 function render() {
   const shell = document.querySelector(".app-shell");
   shell.classList.toggle("compact", state.compactMode);
+  renderOverlay();
   if (state.compactMode) {
     pet.setLine("点击展开");
     return;
   }
 
   document.querySelectorAll("[data-tab]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === state.activeTab);
+    const active = button.dataset.tab === state.activeTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
   });
 
   const panel = document.querySelector("#panel");
@@ -224,12 +260,85 @@ function render() {
       onToggleTop: toggleAlwaysOnTop,
       onTemporaryPassthrough: enableTemporaryPassthrough,
       onSetToolEnabled: setToolEnabled,
-      onDeleteTool: deleteTool,
+      onDeleteTool: requestDeleteTool,
       onSaveTool: saveTool,
       onImportTool: importTool,
       onRefreshStats: refreshStats,
     });
   }
+}
+
+/** Render the floating overlay layer (toast + dialog). Cheap to call. */
+function renderOverlay() {
+  const overlay = document.querySelector("#overlay");
+  if (!overlay) return;
+  if (!state.dialog && !state.toast) {
+    overlay.innerHTML = "";
+    return;
+  }
+
+  let html = "";
+  if (state.dialog) {
+    const d = state.dialog;
+    const confirmClass = d.danger ? "text-button danger" : "text-button primary";
+    html += `
+      <div class="scrim" data-role="scrim">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+          <h3 class="dialog-title" id="dialog-title">${escapeHtml(d.title)}</h3>
+          ${d.body ? `<p class="dialog-body">${d.body}</p>` : ""}
+          <div class="dialog-actions">
+            <button class="text-button" type="button" data-role="dialog-cancel">${escapeHtml(d.cancelLabel || "取消")}</button>
+            <button class="${confirmClass}" type="button" data-role="dialog-confirm">${escapeHtml(d.confirmLabel || "确认")}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  if (state.toast) {
+    html += `<div class="toast" data-tone="${state.toast.tone || "default"}" role="status">${escapeHtml(state.toast.message)}</div>`;
+  }
+  overlay.innerHTML = html;
+
+  const scrim = overlay.querySelector('[data-role="scrim"]');
+  if (scrim) {
+    const cancel = overlay.querySelector('[data-role="dialog-cancel"]');
+    const confirm = overlay.querySelector('[data-role="dialog-confirm"]');
+    cancel?.addEventListener("click", () => closeDialog(false));
+    confirm?.addEventListener("click", () => closeDialog(true));
+    // Scrim click cancels only non-danger dialogs.
+    scrim.addEventListener("mousedown", (event) => {
+      if (event.target === scrim && !state.dialog?.danger) closeDialog(false);
+    });
+    confirm?.focus();
+  }
+}
+
+/** Promise-based confirm dialog. Resolves true on confirm, false on cancel. */
+function confirmDialog(config) {
+  return new Promise((resolve) => {
+    state.dialog = { ...config, _resolve: resolve };
+    renderOverlay();
+  });
+}
+
+function closeDialog(confirmed) {
+  const dialog = state.dialog;
+  if (!dialog) return;
+  state.dialog = null;
+  renderOverlay();
+  dialog._resolve?.(confirmed);
+}
+
+/** Transient status toast. Auto-dismisses; one at a time. */
+function showToast(message, tone = "default") {
+  state.toast = { message, tone };
+  if (state.toastTimer) window.clearTimeout(state.toastTimer);
+  state.toastTimer = window.setTimeout(() => {
+    state.toast = null;
+    state.toastTimer = null;
+    renderOverlay();
+  }, 3000);
+  renderOverlay();
 }
 
 async function changeSettingsTab(tab) {
@@ -344,10 +453,12 @@ async function saveSettings(event) {
       clearApiKey: false,
     };
     state.settingsStatus = "设置已保存";
+    showToast("设置已保存", "success");
     pet.setLine(state.settings.hasApiKey ? "模型已连接" : "等待 API Key");
     settingsSaved = true;
   } catch (error) {
     state.settingsStatus = String(error);
+    showToast(`保存失败：${String(error)}`, "error");
   }
   render();
   if (settingsSaved) scheduleAutoSystemCheck({ runNow: true });
@@ -383,8 +494,10 @@ async function setToolEnabled(name, enabled) {
     await invoke("set_tool_enabled", { name, enabled });
     await loadTools();
     state.toolStatus = enabled ? "工具已启用" : "工具已停用";
+    showToast(enabled ? `已启用「${name}」` : `已停用「${name}」`, "success");
   } catch (error) {
     state.toolStatus = String(error);
+    showToast(String(error), "error");
   }
   render();
 }
@@ -394,13 +507,40 @@ async function deleteTool(name) {
     await invoke("delete_tool", { name });
     await loadTools();
     state.toolStatus = "工具已删除";
+    showToast(`已删除工具「${name}」`, "success");
   } catch (error) {
     state.toolStatus = String(error);
+    showToast(`删除失败：${String(error)}`, "error");
   }
   render();
 }
 
+/** Confirm tool deletion through the custom dialog (replaces window.confirm). */
+async function requestDeleteTool(name) {
+  const confirmed = await confirmDialog({
+    title: `删除工具「${name}」？`,
+    body: "删除后无法恢复。内置工具不可删除。",
+    confirmLabel: "删除",
+    cancelLabel: "取消",
+    danger: true,
+  });
+  if (confirmed) deleteTool(name);
+}
+
 async function saveTool(raw) {
+  // Local tools execute arbitrary programs on this machine; confirm before
+  // persisting an enabled one so the risk is explicit (ui-plan.md §10.8).
+  if (raw.kind === "local" && raw.enabled) {
+    const confirmed = await confirmDialog({
+      title: "启用本地工具？",
+      body: "本地工具会在你的电脑上运行 <code>command</code> 指定的程序或脚本。请只添加你信任的工具。",
+      confirmLabel: "继续保存",
+      cancelLabel: "取消",
+      danger: true,
+    });
+    if (!confirmed) return;
+  }
+
   try {
     const parameters = JSON.parse(raw.parametersRaw);
     const input = {
@@ -431,8 +571,10 @@ async function saveTool(raw) {
     await invoke("save_tool", { input });
     await loadTools();
     state.toolStatus = "工具已保存";
+    showToast(`已保存工具「${raw.name}」`, "success");
   } catch (error) {
     state.toolStatus = `工具保存失败：${String(error)}`;
+    showToast(`保存失败：${String(error)}`, "error");
   }
   render();
 }
@@ -444,8 +586,10 @@ async function importTool(path) {
     const tool = await invoke("import_tool_from_path", { path });
     await loadTools();
     state.toolStatus = `已导入工具：${tool.displayName}`;
+    showToast(`已导入工具：${tool.displayName || tool.name}`, "success");
   } catch (error) {
     state.toolStatus = `导入失败：${String(error)}`;
+    showToast(`导入失败：${String(error)}`, "error");
   }
   render();
 }
@@ -453,9 +597,12 @@ async function importTool(path) {
 async function refreshStats() {
   try {
     await loadStats();
+    state.lastStatsRefreshAt = new Date();
     state.statsStatus = "统计已刷新";
+    showToast("统计已刷新", "success");
   } catch (error) {
     state.statsStatus = String(error);
+    showToast(`刷新失败：${String(error)}`, "error");
   }
   render();
 }
