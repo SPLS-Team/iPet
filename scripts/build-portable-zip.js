@@ -11,7 +11,7 @@
 //
 // Output: target/release/bundle/zip/iPet_<version>_x64_portable.zip
 
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, readdir } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -154,22 +154,61 @@ async function buildZip(entryPaths, outPath) {
   return outPath;
 }
 
+/// Locate the WebView2Loader.dll the exe loads at runtime.
+///
+/// On a local machine it's usually copied to `target/release/` next to the
+/// exe. On a clean CI build it's NOT there (Tauri bundles it into the NSIS
+/// installer but doesn't leave a copy in the release dir), so we fall back to
+/// the webview2-com-sys build-script output dir: `target/release/build/
+/// webview2-com-sys-<hash>/out/x64/WebView2Loader.dll`. We pick the x64 arch
+/// to match the x64 build.
+async function findWebView2Loader(releaseDir) {
+  const direct = join(releaseDir, "WebView2Loader.dll");
+  try {
+    await stat(direct);
+    return direct;
+  } catch {
+    // fall through to build-out search
+  }
+
+  const buildDir = join(releaseDir, "build");
+  let entries;
+  try {
+    entries = await readdir(buildDir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith("webview2-com-sys-")) continue;
+    const candidate = join(buildDir, entry.name, "out", "x64", "WebView2Loader.dll");
+    try {
+      await stat(candidate);
+      return candidate;
+    } catch {
+      // keep searching
+    }
+  }
+  throw new Error(
+    "找不到 WebView2Loader.dll。请先运行 `npm run tauri:build` 生成 release 产物,再打包 zip。",
+  );
+}
+
 async function main() {
   const version = await readVersion();
   const releaseDir = fileURLToPath(TARGET_RELEASE);
 
   // Files a portable copy needs at runtime: the exe + the WebView2 loader.
   // The icon is compiled into the exe, so no extra resource files.
-  const files = ["ipet.exe", "WebView2Loader.dll"].map((f) => join(releaseDir, f));
-  for (const f of files) {
-    try {
-      await stat(f);
-    } catch {
-      throw new Error(
-        `缺少 ${f}。请先运行 \`npm run tauri:build\` 生成 release 产物,再打包 zip。`,
-      );
-    }
+  const exe = join(releaseDir, "ipet.exe");
+  try {
+    await stat(exe);
+  } catch {
+    throw new Error(
+      `缺少 ${exe}。请先运行 \`npm run tauri:build\` 生成 release 产物,再打包 zip。`,
+    );
   }
+  const dll = await findWebView2Loader(releaseDir);
+  const files = [exe, dll];
 
   const outDir = join(releaseDir, "bundle", "zip");
   const outPath = join(outDir, `iPet_${version}_x64_portable.zip`);
@@ -178,6 +217,7 @@ async function main() {
   const size = (await stat(outPath)).size;
   console.log(`✓ portable zip: ${outPath} (${(size / 1048576).toFixed(2)} MiB)`);
   console.log(`  contents: ${files.map((f) => basename(f)).join(", ")}`);
+  console.log(`  dll source: ${dll}`);
 }
 
 main().catch((err) => {
