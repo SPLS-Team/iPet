@@ -1,5 +1,6 @@
 import { appWindow, invoke, listen } from "./tauriBridge.js";
 import { escapeHtml } from "./markdown.js";
+import { icon } from "./icons.js";
 import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
 import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
 import { renderSettings } from "./components/SettingsPanel/SettingsPanel.js";
@@ -33,6 +34,7 @@ const state = {
   toast: null,
   toastTimer: null,
   dialog: null,
+  toolComposerMode: "import",
 };
 
 let pet;
@@ -62,17 +64,17 @@ async function bootstrap() {
           <span data-tauri-drag-region>iPet</span>
         </div>
         <div class="window-actions">
-          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">◱</button>
-          <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">−</button>
-          <button class="window-button danger" data-action="close" title="关闭" aria-label="关闭">×</button>
+          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
+          <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
+          <button class="window-button danger" data-action="close" title="关闭" aria-label="关闭">${icon("close", { label: "关闭" })}</button>
         </div>
       </header>
       <section class="pet-wrap">
         <div id="pet"></div>
       </section>
       <nav class="tabbar" aria-label="main" role="tablist">
-        <button class="tab active" data-tab="chat" role="tab" aria-selected="true"><span>✦</span>聊天</button>
-        <button class="tab" data-tab="settings" role="tab" aria-selected="false"><span>⚙</span>设置</button>
+        <button class="tab active" data-tab="chat" role="tab" aria-selected="true">${icon("chat")}<span>聊天</span></button>
+        <button class="tab" data-tab="settings" role="tab" aria-selected="false">${icon("settings")}<span>设置</span></button>
       </nav>
       <section id="panel" class="panel"></section>
       <div id="overlay" class="overlay" aria-live="polite"></div>
@@ -263,9 +265,16 @@ function render() {
       onDeleteTool: requestDeleteTool,
       onSaveTool: saveTool,
       onImportTool: importTool,
+      onSetComposerMode: setToolComposerMode,
       onRefreshStats: refreshStats,
     });
   }
+}
+
+/** Switch the tool composer between import / http / local (ui-plan §10.5). */
+function setToolComposerMode(mode) {
+  state.toolComposerMode = mode;
+  render();
 }
 
 /** Render the floating overlay layer (toast + dialog). Cheap to call. */
@@ -309,7 +318,25 @@ function renderOverlay() {
     scrim.addEventListener("mousedown", (event) => {
       if (event.target === scrim && !state.dialog?.danger) closeDialog(false);
     });
-    confirm?.focus();
+    // Focus trap: keep Tab within the dialog (ui-plan §15.1 / §12.3).
+    const dialogEl = scrim.querySelector(".dialog");
+    if (dialogEl) {
+      confirm?.focus();
+      scrim.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab" || !dialogEl) return;
+        const focusable = dialogEl.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
   }
 }
 

@@ -216,6 +216,26 @@ button {
   cursor: pointer;
 }
 
+.icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+}
+
+button .icon,
+.tab .icon,
+.settings-tab .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.window-button .icon {
+  width: 15px;
+  height: 15px;
+}
+
 :focus-visible {
   outline: 0;
   box-shadow:
@@ -1563,6 +1583,122 @@ details pre,
   margin: 12px;
 }
 
+/* Tool composer segmented control (ui-plan §10.5). */
+.tool-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fade-in-up 440ms var(--ease-spring) both;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-muted);
+}
+
+.segmented-tab {
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: 700;
+  transition:
+    background var(--duration-normal) var(--ease-spring),
+    color var(--duration-normal) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-spring);
+}
+
+.segmented-tab:hover {
+  background: var(--color-surface-strong);
+}
+
+.segmented-tab.active {
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.tool-reference {
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+}
+
+/* Temperature slider + output (ui-plan §9.6). */
+.field-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.slider-value {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-body);
+  font-weight: 700;
+}
+
+input[type="range"] {
+  width: 100%;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.1);
+  appearance: none;
+  -webkit-appearance: none;
+  outline: 0;
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--color-surface-strong),
+    0 0 0 5px var(--color-accent-ring);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.risk-callout .icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 .auto-system-status-card {
   max-height: none;
 }
@@ -2107,5 +2243,45 @@ td[num] {
 
   .app-shell::before {
     animation: none;
+  }
+
+  /* Stop the perpetual pet idle/blink loops (ui-plan §15.4). */
+  .pet-body,
+  .pet-stage[data-mood="thinking"] .pet-body,
+  .pet-stage[data-mood="talking"] .pet-body,
+  .pet-stage[data-mood="tool"] .pet-body,
+  .pet-eye {
+    animation: none !important;
+  }
+}
+
+/* Short-window pet stage compaction (ui-plan §6.1). */
+@media (max-height: 620px) {
+  .app-shell {
+    grid-template-rows:
+      var(--platform-titlebar-height)
+      minmax(142px, 168px)
+      var(--tabbar-height)
+      minmax(0, 1fr);
+  }
+  .pet-stage {
+    height: 142px;
+  }
+}
+
+@media (max-height: 520px) {
+  .app-shell {
+    grid-template-rows:
+      var(--platform-titlebar-height)
+      minmax(116px, 132px)
+      var(--tabbar-height)
+      minmax(0, 1fr);
+  }
+  .pet-stage {
+    height: 116px;
+  }
+  .pet-body {
+    width: 96px;
+    height: 92px;
   }
 }

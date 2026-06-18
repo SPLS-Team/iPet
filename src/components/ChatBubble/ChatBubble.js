@@ -1,4 +1,5 @@
 import { escapeHtml, renderMarkdown } from "../../markdown.js";
+import { icon } from "../../icons.js";
 
 export function renderChat(container, state, handlers) {
   const messages = state.messages
@@ -21,7 +22,7 @@ export function renderChat(container, state, handlers) {
           ${state.chatBusy ? "disabled" : ""}
         ></textarea>
         <button class="icon-button primary" type="submit" ${state.chatBusy ? "disabled" : ""} title="发送" aria-label="发送">
-          <span>发送</span>
+          ${icon("send", { label: "发送" })}
         </button>
       </form>
       <div class="inline-status chat-status" aria-live="polite">
