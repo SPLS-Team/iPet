@@ -41,7 +41,8 @@ The project is built with **Tauri 2** (Rust backend + WebView frontend), uses **
 ### Highlights
 
 - **Transparent, frameless, always-on-top window** — drag anywhere, mouse-passthrough toggle, "compact" floating-head mode.
-- **CSS-animated pet character** with `idle / thinking / talking` states; ready to be swapped for a Live2D model later.
+- **CSS-animated pet character** with `idle / thinking / talking / tool / warning` states; ready to be swapped for a Live2D model later.
+- **Apple-style UI redesign** — design-token system (typography / spacing / motion / radius), light & dark mode with manual override, per-platform profiles (macOS / Windows / Linux) via `data-platform`, dependency-free inline SVG icons, custom dialog + toast system (no more `window.confirm`), segmented tool composer, temperature slider, stats Bento + prompt/completion breakdown, dialog focus trap, `prefers-reduced-motion` aware.
 - **Streaming chat** against any OpenAI-compatible `/chat/completions` endpoint; live-typing thinking timer; Markdown rendering with GFM tables, task lists, code blocks (via `marked` + `DOMPurify`).
 - **Function-calling with three tool kinds under one spec** — built-ins (`get_system_status`, `scan_disk`), user-defined HTTP tools, and `local` subprocess tools, all described by a `tool.json` manifest (schemaVersion 1 = http, 2 = +local) and runtime-hot-pluggable (per-request DB read, no cache).
 - **SSRF-hardened HTTP tools** — URL allow/deny at save time and again at request time (resolves DNS, rejects loopback/private/link-local/CGNAT/ULA, IPv4-mapped IPv6 too); 30 s timeout, 5-redirect cap, 2 MiB response ceiling.
@@ -73,13 +74,14 @@ Then open the **Settings** page inside the app and paste an OpenAI-compatible AP
 │   src/components/ChatBubble/            ← chat UI, streaming bubbles             │
 │   src/components/SettingsPanel/         ← model / tools / stats tabs             │
 │   src/components/PetCharacter/          ← CSS pet sprite + state                 │
+│   src/icons.js                          ← inline SVG icon set (no dependency)    │
 │   src/markdown.js                       ← marked + DOMPurify wrapper             │
 │   src/tauriBridge.js                    ← thin invoke / listen / window facade   │
 │                                                                                  │
 └──────────────────────────────── Tauri IPC ───────────────────────────────────────┘
 ┌────────────────────────── Backend (Rust, src-tauri/src/) ────────────────────────┐
 │                                                                                  │
-│   lib.rs              ← 19 #[tauri::command]s + run() entrypoint + tracing init  │
+│   lib.rs              ← 21 #[tauri::command]s + run() entrypoint + tracing init  │
 │   app_error.rs        ← AppResult<T> / AppError shared error type                │
 │   config.rs           ← LlmSettings shape, normalize + validate                  │
 │   storage/            ← rusqlite wrapper, 6 tables, versioned migrations,        │
@@ -105,6 +107,7 @@ Then open the **Settings** page inside the app and paste an OpenAI-compatible AP
 | `save_llm_settings`      | Persist API key, base URL, model, temperature, persona       |
 | `get_system_status`      | Snapshot CPU / RAM / disk usage via `sysinfo`                |
 | `scan_disk`              | Parallel rayon-based directory scan, size-sorted summary     |
+| `cancel_disk_scan`       | Cancel an in-flight disk scan by its caller id               |
 | `get_recent_messages`    | Load N most-recent chat messages                             |
 | `list_tools`             | Return all tool configs (builtin + custom, http + local)     |
 | `save_tool`              | Create/update a custom http or local tool (JSON-Schema params)|
@@ -119,6 +122,8 @@ Then open the **Settings** page inside the app and paste an OpenAI-compatible AP
 | `close_window`           | Close window                                                 |
 | `start_window_drag`      | Begin a drag gesture on the borderless window                |
 | `set_compact_window`     | Shrink to the floating-head "compact" mode                   |
+| `get_preference`         | Read an arbitrary preference string (e.g. UI theme)         |
+| `set_preference`         | Persist an arbitrary preference string                      |
 
 ### API key configuration
 
@@ -351,7 +356,7 @@ ipet/
 - Harden `local` tools: import-time confirmation, command/path constraints, or pre-call user approval.
 - Tighter CSP (drop `style-src 'unsafe-inline'`).
 - Replace the CSS sprite with a Live2D model (the `src/live2d/` slot is reserved).
-- Frontend smoke tests; multi-round tool-call loop + chat cancel.
+- Frontend smoke tests; multi-round tool-call loop; backend chat abort (a local Stop button already cancels the UI side).
 - macOS / Linux smoke tests (the code is portable but only Windows is verified today).
 
 </details>
@@ -371,7 +376,8 @@ ipet/
 ### 亮点
 
 - **透明、无边框、默认置顶窗口** —— 任意位置拖拽、鼠标穿透开关、"紧凑"浮头模式。
-- **CSS 动画桌宠**，具备 `idle / thinking / talking` 三态；后续可平滑替换为 Live2D 模型。
+- **CSS 动画桌宠**，具备 `idle / thinking / talking / tool / warning` 多态；后续可平滑替换为 Live2D 模型。
+- **Apple 风格 UI 重构** —— 设计 token 体系（排版/间距/动效/圆角）、浅色与暗色模式（可手动覆盖）、按平台 profile（macOS/Windows/Linux，经 `data-platform`）、无依赖内联 SVG 图标、自定义 dialog + toast 系统（不再用 `window.confirm`）、分段式工具 composer、Temperature 滑块、统计 Bento + Prompt/Completion 占比条、dialog focus trap、支持 `prefers-reduced-motion`。
 - **流式对话**，对接任何 OpenAI 兼容的 `/chat/completions` 接口；实时打字 + 思考计时器；用 `marked` + `DOMPurify` 渲染 Markdown（GFM 表格、任务列表、代码块）。
 - **三类工具、统一规范的 function calling** —— 内置工具（`get_system_status`、`scan_disk`）、自定义 HTTP 工具、以及 `local` 子进程工具，全部由 `tool.json` 描述（schemaVersion 1=http / 2=+local），运行时热插拔（每请求实时查 DB，无缓存）。
 - **HTTP 工具 SSRF 加固** —— 保存时和发起请求时都做 URL 黑名单校验（DNS 解析后再检查；拒绝 loopback / 私网 / 链路本地 / CGNAT / ULA，含 IPv4-mapped IPv6）；30 秒超时、最多 5 次重定向、响应体 2 MiB 上限。
@@ -403,13 +409,14 @@ npm run tauri:dev
 │   src/components/ChatBubble/            ← 聊天 UI、流式气泡                      │
 │   src/components/SettingsPanel/         ← 模型 / 工具 / 统计 三个 tab            │
 │   src/components/PetCharacter/          ← CSS 角色精灵 + 状态切换                │
+│   src/icons.js                          ← 内联 SVG 图标集（无依赖）              │
 │   src/markdown.js                       ← marked + DOMPurify 封装                │
 │   src/tauriBridge.js                    ← invoke / listen / window 的轻封装      │
 │                                                                                  │
 └──────────────────────────────── Tauri IPC ───────────────────────────────────────┘
 ┌────────────────────────── 后端（Rust，src-tauri/src/）───────────────────────────┐
 │                                                                                  │
-│   lib.rs              ← 19 个 #[tauri::command] + run() 入口 + tracing 初始化    │
+│   lib.rs              ← 21 个 #[tauri::command] + run() 入口 + tracing 初始化    │
 │   app_error.rs        ← AppResult<T> / AppError 统一错误类型                     │
 │   config.rs           ← LlmSettings 数据结构与归一化、校验                       │
 │   storage/            ← rusqlite 封装，6 张表，版本化迁移，按表域拆分子模块      │
@@ -435,6 +442,7 @@ npm run tauri:dev
 | `save_llm_settings`      | 保存 Key / Base URL / 模型 / temperature / 人设               |
 | `get_system_status`      | 通过 `sysinfo` 抓 CPU / RAM / 磁盘快照                        |
 | `scan_disk`              | rayon 并行目录扫描，按大小排序的树形摘要                      |
+| `cancel_disk_scan`       | 按 caller id 取消进行中的磁盘扫描                             |
 | `get_recent_messages`    | 拉取最近 N 条聊天记录                                         |
 | `list_tools`             | 列出所有工具配置（内置 + 自定义，http + local）               |
 | `save_tool`              | 新建 / 更新一个自定义 http 或 local 工具（JSON Schema 参数）  |
@@ -449,6 +457,8 @@ npm run tauri:dev
 | `close_window`           | 关闭                                                          |
 | `start_window_drag`      | 在无边框窗口上启动拖拽手势                                    |
 | `set_compact_window`     | 切换到"紧凑"浮头模式                                          |
+| `get_preference`         | 读取任意偏好字符串（如 UI 主题）                              |
+| `set_preference`         | 持久化任意偏好字符串                                          |
 
 ### API Key 配置
 
@@ -681,7 +691,7 @@ ipet/
 - 收敛 local 工具安全：导入时确认提示、命令/路径约束，或调用前用户确认。
 - 收紧 CSP（去掉 `style-src 'unsafe-inline'`）。
 - 用 Live2D 模型替换 CSS 精灵（`src/live2d/` 目录已预留）。
-- 前端 smoke 测试；多轮工具调用循环 + 聊天取消。
+- 前端 smoke 测试；多轮工具调用循环；后端聊天中断（本地 Stop 按钮已可在 UI 侧取消）。
 - macOS / Linux 冒烟测试（代码本身可移植，但目前仅在 Windows 上验证过）。
 
 </details>
