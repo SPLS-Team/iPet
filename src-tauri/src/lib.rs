@@ -307,6 +307,25 @@ fn set_compact_window(window: Window, enabled: bool) -> Result<(), String> {
     }
 }
 
+/// Read an arbitrary preference string (e.g. the chosen UI theme). Returns
+/// `None` when the key is unset so the frontend can fall back to its default.
+#[tauri::command]
+fn get_preference(key: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    state
+        .storage
+        .get_session_value(&key)
+        .map_err(public_error)
+}
+
+/// Persist an arbitrary preference string (e.g. the chosen UI theme).
+#[tauri::command]
+fn set_preference(key: String, value: String, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .storage
+        .set_session_value(&key, &value)
+        .map_err(public_error)
+}
+
 fn get_llm_settings_inner(state: &State<'_, AppState>) -> AppResult<LlmSettingsStatus> {
     let settings = state.storage.load_llm_settings()?;
     Ok(LlmSettingsStatus::from_settings(
@@ -516,7 +535,9 @@ pub fn run() {
             minimize_window,
             close_window,
             start_window_drag,
-            set_compact_window
+            set_compact_window,
+            get_preference,
+            set_preference
         ])
         .run(tauri::generate_context!())
         .expect("error while running iPet");

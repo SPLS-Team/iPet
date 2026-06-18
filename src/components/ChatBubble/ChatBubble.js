@@ -12,7 +12,7 @@ export function renderChat(container, state, handlers) {
   container.innerHTML = `
     <section class="chat-panel">
       <div class="message-list" data-role="messages">
-        ${messages || renderEmptyState()}
+        ${messages || renderEmptyState(handlers)}
       </div>
       <form class="chat-form composer-card" data-role="form" aria-label="发送消息">
         <textarea
@@ -21,9 +21,9 @@ export function renderChat(container, state, handlers) {
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           ${state.chatBusy ? "disabled" : ""}
         ></textarea>
-        <button class="icon-button primary" type="submit" ${state.chatBusy ? "disabled" : ""} title="发送" aria-label="发送">
-          ${icon("send", { label: "发送" })}
-        </button>
+        ${state.chatBusy
+          ? `<button class="icon-button stop" type="button" data-role="stop" title="停止" aria-label="停止">${icon("close", { label: "停止" })}</button>`
+          : `<button class="icon-button primary" type="submit" title="发送" aria-label="发送">${icon("send", { label: "发送" })}</button>`}
       </form>
       <div class="inline-status chat-status" aria-live="polite">
         <span class="status-text" data-role="chat-status-text">${escapeHtml(state.chatStatus || "")}</span>
@@ -56,6 +56,12 @@ export function renderChat(container, state, handlers) {
     submitPrompt(form);
   });
 
+  // Stop button: locally cancel the active stream (ui-plan §8.5).
+  const stopBtn = form.querySelector('[data-role="stop"]');
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => handlers.onStop?.());
+  }
+
   function submitPrompt(formEl) {
     const input = formEl.elements.prompt;
     const value = input.value.trim();
@@ -66,6 +72,19 @@ export function renderChat(container, state, handlers) {
 
   const messageList = container.querySelector('[data-role="messages"]');
   messageList.scrollTop = messageList.scrollHeight;
+
+  // Wire empty-state quick chips (ui-plan §8.7).
+  const chipActions = [
+    () => handlers.onSend?.("请检查一下当前的系统状态。"),
+    () => handlers.onGoSettings?.("tools"),
+    () => handlers.onGoSettings?.("stats"),
+  ];
+  container.querySelectorAll("[data-empty-chip]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const idx = Number(button.dataset.emptyChip);
+      chipActions[idx]?.();
+    });
+  });
 }
 
 /// Streaming fast path: re-render only the last assistant bubble's content
@@ -92,26 +111,44 @@ export function updateChatStreaming(container, state) {
   return true;
 }
 
-function renderEmptyState() {
+function renderEmptyState(handlers) {
+  // Quick-start chips wired to real behavior (ui-plan §8.7): no fake buttons —
+  // each either sends a real prompt or navigates to a real panel.
+  const chips = [
+    { label: "检查系统状态", action: () => handlers.onSend?.("请检查一下当前的系统状态。") },
+    { label: "查看工具", action: () => handlers.onGoSettings?.("tools") },
+    { label: "查看 token 使用", action: () => handlers.onGoSettings?.("stats") },
+  ];
+  const chipsHtml = handlers.onSend
+    ? `<div class="empty-chips">${chips
+        .map(
+          (chip, idx) =>
+            `<button class="empty-chip" type="button" data-empty-chip="${idx}">${escapeHtml(chip.label)}</button>`,
+        )
+        .join("")}</div>`
+    : "";
   return `
-    <div class="empty-state">
+    <div class="empty-state" data-role="empty-state">
       <strong>iPet 在这里</strong>
       <span>问它问题，或让它检查系统状态。</span>
+      ${chipsHtml}
     </div>
   `;
 }
 
 function renderMessage(message, _isLast) {
   const role = message.role === "user" ? "user" : "assistant";
-  const label = role === "user" ? "你" : "iPet";
   const avatar = role === "user" ? "你" : "iP";
   const content = role === "assistant" ? renderMarkdown(message.content) : escapeHtml(message.content);
+  // Per ui-plan §8.3: user messages carry no role label (right-align + blue
+  // already convey authorship); assistant shows a small "iPet" caption.
+  const roleLabel = role === "assistant" ? `<div class="message-role">iPet</div>` : "";
 
   return `
     <div class="message-row message-row-${role}" data-role="message" data-message-role="${role}">
       ${role === "assistant" ? `<div class="message-avatar">${avatar}</div>` : ""}
       <div class="message message-${role}">
-        <div class="message-role">${label}</div>
+        ${roleLabel}
         <div class="message-text ${role === "assistant" ? "markdown-body" : ""}">
           ${content}
         </div>

@@ -22,6 +22,7 @@ const state = {
   chatBusy: false,
   chatStatus: "",
   toolActivity: "",
+  stopRequested: false,
   currentRequestId: null,
   alwaysOnTop: true,
   compactMode: false,
@@ -35,6 +36,9 @@ const state = {
   toastTimer: null,
   dialog: null,
   toolComposerMode: "import",
+  theme: "system",
+  settingsFieldErrors: {},
+  settingsSaveFailed: false,
 };
 
 let pet;
@@ -53,8 +57,46 @@ function detectPlatform() {
   return "unknown";
 }
 
+const THEME_KEY = "ipet:theme";
+const THEME_OPTIONS = ["system", "light", "dark"];
+
+/** Load persisted theme preference and apply it (ui-plan.md §14.1 phase 2). */
+async function loadTheme() {
+  try {
+    const stored = await invoke("get_preference", { key: THEME_KEY });
+    if (stored && THEME_OPTIONS.includes(stored)) {
+      state.theme = stored;
+    }
+  } catch {
+    /* preference command unavailable in older builds — fall back to system */
+  }
+  applyTheme();
+}
+
+function applyTheme() {
+  // "system" → no data-theme (CSS follows prefers-color-scheme).
+  if (state.theme === "system") {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = state.theme;
+  }
+}
+
+async function setTheme(theme) {
+  if (!THEME_OPTIONS.includes(theme)) return;
+  state.theme = theme;
+  applyTheme();
+  try {
+    await invoke("set_preference", { key: THEME_KEY, value: theme });
+  } catch (error) {
+    showToast(`主题保存失败：${String(error)}`, "error");
+  }
+  render();
+}
+
 async function bootstrap() {
   document.documentElement.dataset.platform = state.platform;
+  await loadTheme();
 
   document.querySelector("#app").innerHTML = `
     <main class="app-shell">
@@ -254,7 +296,7 @@ function render() {
 
   const panel = document.querySelector("#panel");
   if (state.activeTab === "chat") {
-    renderChat(panel, state, { onSend: sendMessage });
+    renderChat(panel, state, { onSend: sendMessage, onStop: stopChat, onGoSettings: goToSettings });
   } else {
     renderSettings(panel, state, {
       onSettingsTab: changeSettingsTab,
@@ -266,6 +308,7 @@ function render() {
       onSaveTool: saveTool,
       onImportTool: importTool,
       onSetComposerMode: setToolComposerMode,
+      onSetTheme: setTheme,
       onRefreshStats: refreshStats,
     });
   }
@@ -274,6 +317,15 @@ function render() {
 /** Switch the tool composer between import / http / local (ui-plan §10.5). */
 function setToolComposerMode(mode) {
   state.toolComposerMode = mode;
+  render();
+}
+
+/** Jump to a settings sub-tab from elsewhere (e.g. empty-state chips). */
+async function goToSettings(tab) {
+  state.activeTab = "settings";
+  state.settingsTab = tab;
+  if (tab === "tools") await loadToolsSafely();
+  if (tab === "stats") await refreshStats();
   render();
 }
 
@@ -394,6 +446,7 @@ async function sendMessage(content) {
   state.messages = [...outgoingMessages, { role: "assistant", content: "" }];
   state.currentRequestId = requestId;
   state.chatBusy = true;
+  state.stopRequested = false;
   beginThinking("发送中");
   pet.setMood("thinking");
   render();
@@ -416,12 +469,32 @@ async function sendMessage(content) {
 }
 
 function appendAssistantDelta(delta) {
+  if (state.stopRequested) return;
   const last = state.messages[state.messages.length - 1];
   if (last?.role === "assistant") {
     last.content += delta;
   } else {
     state.messages.push({ role: "assistant", content: delta });
   }
+}
+
+/**
+ * Locally stop the active chat: drop the requestId so the still-running backend
+ * stream's later events are ignored, and return the UI to idle. The backend
+ * request is not aborted (no abort channel wired through LlmClient yet), but
+ * its output is discarded so the user regains control immediately.
+ * (ui-plan.md §8.5 — Stop button keeps send-button position stable.)
+ */
+function stopChat() {
+  if (!state.chatBusy) return;
+  state.stopRequested = true;
+  state.currentRequestId = null;
+  state.chatBusy = false;
+  state.chatStatus = "已停止";
+  state.toolActivity = "";
+  stopThinking();
+  pet.setMood("idle");
+  render();
 }
 
 function beginThinking(status) {
@@ -471,6 +544,20 @@ async function saveSettings(event) {
     systemPrompt: form.elements.systemPrompt.value,
   };
 
+  // Front-end field validation (ui-plan §9.5): catch obviously bad input before
+  // hitting the backend, and surface the error next to the offending field.
+  const errors = {};
+  if (!input.baseUrl.trim()) errors.baseUrl = "Base URL 不能为空";
+  else if (!/^https?:\/\//i.test(input.baseUrl.trim())) errors.baseUrl = "Base URL 需以 http:// 或 https:// 开头";
+  if (!input.model.trim()) errors.model = "模型名不能为空";
+  if (Object.keys(errors).length) {
+    state.settingsFieldErrors = errors;
+    showToast("请修正标红的字段", "error");
+    render();
+    return;
+  }
+  state.settingsFieldErrors = {};
+
   let settingsSaved = false;
   try {
     state.settings = await invoke("save_llm_settings", { input });
@@ -480,11 +567,13 @@ async function saveSettings(event) {
       clearApiKey: false,
     };
     state.settingsStatus = "设置已保存";
+    state.settingsSaveFailed = false;
     showToast("设置已保存", "success");
     pet.setLine(state.settings.hasApiKey ? "模型已连接" : "等待 API Key");
     settingsSaved = true;
   } catch (error) {
     state.settingsStatus = String(error);
+    state.settingsSaveFailed = true;
     showToast(`保存失败：${String(error)}`, "error");
   }
   render();
@@ -569,6 +658,14 @@ async function saveTool(raw) {
   }
 
   try {
+    // Field-level validation (ui-plan §10.7).
+    if (!raw.name) throw new Error("工具名称不能为空");
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(raw.name)) throw new Error("工具名称需以字母开头，仅含字母数字下划线");
+    if (raw.kind === "http" && !/^https?:\/\//i.test(raw.http?.url || "")) {
+      throw new Error("HTTP 工具的 URL 需以 http:// 或 https:// 开头");
+    }
+    if (raw.kind === "local" && !raw.local?.command) throw new Error("本地工具的 command 不能为空");
+
     const parameters = JSON.parse(raw.parametersRaw);
     const input = {
       name: raw.name,

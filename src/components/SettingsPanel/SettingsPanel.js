@@ -56,11 +56,20 @@ function renderActiveSettingsTab(state) {
 function renderModelTab(state) {
   const settings = state.settings;
   const draft = state.settingsDraft ?? {};
-  const statusClass = settings?.hasApiKey ? "ok" : "warn";
+  const statusClass = state.settingsSaveFailed
+    ? "error"
+    : settings?.hasApiKey
+      ? "ok"
+      : "warn";
+  const statusTitle = state.settingsSaveFailed
+    ? "设置保存失败"
+    : settings?.hasApiKey
+      ? "API Key 已配置"
+      : "API Key 未配置";
   return `
     <form class="settings-form" data-role="settings-form">
       <div class="settings-status ${statusClass}">
-        <strong>${settings?.hasApiKey ? "API Key 已配置" : "API Key 未配置"}</strong>
+        <strong>${escapeHtml(statusTitle)}</strong>
         <span title="${escapeAttr(settings?.settingsPath || "")}">${escapeHtml(settings?.settingsPath || "")}</span>
       </div>
 
@@ -76,11 +85,13 @@ function renderModelTab(state) {
         </label>
         <label>
           <span>Base URL</span>
-          <input name="baseUrl" value="${escapeAttr(draft.baseUrl || "")}" />
+          <input name="baseUrl" value="${escapeAttr(draft.baseUrl || "")}" aria-invalid="${fieldError(state, "baseUrl") ? "true" : "false"}" />
+          ${fieldError(state, "baseUrl")}
         </label>
         <label>
           <span>模型</span>
-          <input name="model" value="${escapeAttr(draft.model || "")}" />
+          <input name="model" value="${escapeAttr(draft.model || "")}" aria-invalid="${fieldError(state, "model") ? "true" : "false"}" />
+          ${fieldError(state, "model")}
         </label>
       </section>
 
@@ -130,6 +141,16 @@ function renderModelTab(state) {
 
       <button class="text-button primary" type="submit">${icon("check")} 保存设置</button>
     </form>
+
+    <section class="settings-card">
+      <h3>外观</h3>
+      <p class="card-hint">主题跟随系统，或手动选择浅色 / 深色。</p>
+      <div class="segmented" role="tablist" aria-label="主题">
+        ${themeOption("system", "跟随系统", state)}
+        ${themeOption("light", "浅色", state)}
+        ${themeOption("dark", "深色", state)}
+      </div>
+    </section>
 
     <section class="settings-card">
       <h3>窗口行为</h3>
@@ -251,6 +272,11 @@ function renderToolsTab(state) {
 function composerTab(mode, label, state) {
   const active = (state.toolComposerMode || "import") === mode;
   return `<button class="segmented-tab ${active ? "active" : ""}" type="button" data-composer-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}">${label}</button>`;
+}
+
+function themeOption(value, label, state) {
+  const active = (state.theme || "system") === value;
+  return `<button class="segmented-tab ${active ? "active" : ""}" type="button" data-theme-mode="${value}" role="tab" aria-selected="${active ? "true" : "false"}">${label}</button>`;
 }
 
 function renderComposerForm(state) {
@@ -501,6 +527,13 @@ function bindModelTab(container, _state, handlers) {
       out.textContent = Number(slider.value).toFixed(1);
     });
   }
+
+  // Theme segmented control (ui-plan §14.1 phase 2).
+  container.querySelectorAll("[data-theme-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (handlers.onSetTheme) handlers.onSetTheme(button.dataset.themeMode);
+    });
+  });
 }
 
 function bindToolsTab(container, handlers) {
@@ -590,4 +623,10 @@ function renderBucketRow(bucket) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replaceAll("`", "&#096;");
+}
+
+/** Inline field-error span for the model tab (ui-plan §9.5). */
+function fieldError(state, name) {
+  const msg = state.settingsFieldErrors?.[name];
+  return msg ? `<span class="field-error">${escapeHtml(msg)}</span>` : "";
 }
