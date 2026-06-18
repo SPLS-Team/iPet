@@ -138,15 +138,30 @@ jobs:
       - name: Build release notes
         id: notes
         shell: bash
+        env:
+          SETUP_PATH: ${{ steps.files.outputs.setup }}
+          ZIP_PATH: ${{ steps.files.outputs.zip }}
         run: |
           tag="${GITHUB_REF_NAME#v}"
+          setup_name="$(basename "$SETUP_PATH")"
+          zip_name="$(basename "$ZIP_PATH")"
           {
             echo "## iPet v${tag}"
             echo
             echo "### 下载"
-            echo "- \`$(basename "$setup")\` — NSIS 安装包"
-            echo "- \`$(basename "$zip")\` — 绿色版(解压即用,需系统已装 WebView2 运行时)"
+            echo "- \`${setup_name}\` — NSIS 安装包"
+            echo "- \`${zip_name}\` — 绿色版(解压即用,需系统已装 WebView2 运行时)"
             echo
+            # Human-readable changelog from the annotated tag body (the bulleted
+            # feature list written when tagging). Falls back gracefully if the
+            # tag is lightweight / has no body.
+            tag_body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
+            if [ -n "$tag_body" ]; then
+              echo "### 本次更新"
+              echo
+              echo "$tag_body"
+              echo
+            fi
             echo "### 自上一个版本以来的提交"
             echo
             # Commits between the previous tag and this one, one-line each.
