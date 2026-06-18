@@ -79,8 +79,9 @@ Then open the **Settings** page inside the app and paste an OpenAI-compatible AP
 │   │                                       / Usage / System / Appearance         │
 │   src/ui/                               ← inline SVG icon set (no dependency)   │
 │   src/utils/                            ← markdown renderer + frontend tests     │
-│   src/styles.css                        ← CSS entrypoint for component styles    │
-│   src/styles/                           ← design tokens, platform + theme vars   │
+│   src/styles.css                        ← CSS entrypoint — @imports the modules  │
+│   src/styles/                           ← tokens / base / shell / chat /         │
+│   │                                       control-center / dialog / responsive  │
 │   src/components/ChatBubble/            ← chat UI, streaming bubbles             │
 │   src/components/PetCharacter/          ← CSS pet sprite + state                 │
 │                                                                                  │
@@ -420,8 +421,9 @@ npm run tauri:dev
 │   │                                       系统 / 外观                            │
 │   src/ui/                               ← 内联 SVG 图标集（无依赖）              │
 │   src/utils/                            ← Markdown 渲染器 + 前端测试             │
-│   src/styles.css                        ← 样式入口，承载组件样式                 │
-│   src/styles/                           ← 设计 token、平台 profile、主题变量     │
+│   src/styles.css                        ← 样式入口，@import 各模块               │
+│   src/styles/                           ← tokens / base / shell / chat /         │
+│   │                                       control-center / dialog / responsive  │
 │   src/components/ChatBubble/            ← 聊天 UI、流式气泡                      │
 │   src/components/PetCharacter/          ← CSS 角色精灵 + 状态切换                │
 │                                                                                  │

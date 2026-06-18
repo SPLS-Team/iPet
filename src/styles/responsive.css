@@ -1,0 +1,264 @@
+/* iPet responsive + platform profiles + reduced-motion overrides. */
+
+/* -------------------------------------------------------------------------
+   17. Responsive
+   ------------------------------------------------------------------------- */
+@media (min-width: 720px) {
+  .tool-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .message {
+    max-width: 78%;
+  }
+}
+
+/* Medium/wide: center chat content, cap message width (ui-plan §13.4). */
+@media (min-width: 900px) {
+  .message-list {
+    width: min(680px, 100%);
+    margin: 0 auto;
+  }
+
+  .chat-form {
+    width: min(680px, 100%);
+    margin: 0 auto;
+  }
+
+  .message {
+    max-width: 72%;
+  }
+}
+
+@media (max-width: 390px) {
+  /* Narrow windows (≥ the 360x560 talk minimum, ref-plan §5.2): tighten
+     padding and collapse grids to a single column. Do NOT reset the shell
+     grid-template-rows here — the view-driven talk/control/capsule templates
+     already adapt; forcing the old 4-row layout broke the new shell. */
+  .chat-panel,
+  .settings-panel,
+  .control-panel {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .metric-grid,
+  .settings-grid,
+  .chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .control-nav-item span {
+    display: none;
+  }
+}
+
+
+/* -------------------------------------------------------------------------
+   18. Platform overrides
+   ------------------------------------------------------------------------- */
+
+/* macOS: lighter titlebar, traffic-light-style buttons on the left. */
+:root[data-platform="macos"] .titlebar {
+  padding: 8px 12px 6px 12px;
+}
+
+:root[data-platform="macos"] .window-actions {
+  order: -1;
+  margin-right: 4px;
+}
+
+:root[data-platform="macos"] .window-button {
+  min-width: 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 0;
+  background: #d1d1d6;
+}
+
+:root[data-platform="macos"] .window-button[data-chrome="compact"] {
+  background: #ffbd2e;
+}
+
+:root[data-platform="macos"] .window-button[data-chrome="minimize"] {
+  background: #28c840;
+}
+
+:root[data-platform="macos"] .window-button[data-chrome="close"] {
+  background: #ff5f57;
+}
+
+:root[data-platform="macos"] .window-button:hover {
+  transform: scale(1.08);
+  filter: brightness(0.94);
+  background: #d1d1d6;
+}
+
+:root[data-platform="macos"] .window-button.danger:hover {
+  background: #ff5f57;
+  color: #ffffff;
+}
+
+:root[data-platform="macos"] .settings-card {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+/* macOS profile (ref-plan §7.2): grouped system-settings rows — label left,
+   control right — lighter shadows, sheet-like dialogs, restrained motion. */
+:root[data-platform="macos"] .settings-card label {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+:root[data-platform="macos"] .settings-card label > span:first-child {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+}
+:root[data-platform="macos"] .settings-card input,
+:root[data-platform="macos"] .settings-card select,
+:root[data-platform="macos"] .settings-card textarea {
+  flex: 1 1 auto;
+  max-width: 60%;
+}
+:root[data-platform="macos"] .dialog {
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+}
+:root[data-platform="macos"] .text-button.primary {
+  background: var(--color-accent);
+  color: #ffffff;
+  border-radius: var(--radius-control);
+}
+:root[data-platform="macos"] .text-button.primary:hover {
+  background: var(--color-accent-hover);
+}
+
+/* Windows profile (ref-plan §7.3): Fluent cards with clearer input borders,
+   a prominent blue primary button, and a distinct focus ring. */
+:root[data-platform="windows"] .settings-card,
+:root[data-platform="windows"] .tool-card {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-card);
+}
+:root[data-platform="windows"] .settings-card input,
+:root[data-platform="windows"] .settings-card select,
+:root[data-platform="windows"] .settings-card textarea,
+:root[data-platform="windows"] .tool-form input,
+:root[data-platform="windows"] .tool-form textarea {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+:root[data-platform="windows"] .settings-card input:focus,
+:root[data-platform="windows"] .tool-form input:focus {
+  border-color: var(--color-accent);
+}
+:root[data-platform="windows"] .text-button.primary {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+:root[data-platform="windows"] .text-button.primary:hover {
+  background: var(--color-accent-hover);
+  transform: scale(1.02);
+}
+:root[data-platform="windows"] :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+/* Linux profile (ref-plan §7.4): low blur fallback — replace glass with solid
+   surfaces, lighter shadows, stricter reduced-motion. */
+:root[data-platform="linux"] .pet-wrap,
+:root[data-platform="linux"] .settings-card,
+:root[data-platform="linux"] .tool-card,
+:root[data-platform="linux"] .tool-form,
+:root[data-platform="linux"] .metric,
+:root[data-platform="linux"] .breakdown,
+:root[data-platform="linux"] .chat-form,
+:root[data-platform="linux"] .talk-header,
+:root[data-platform="linux"] .titlebar,
+:root[data-platform="linux"] .control-nav {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--color-surface-strong);
+}
+:root[data-platform="linux"] .app-shell::before {
+  display: none;
+}
+:root[data-platform="linux"] .settings-card,
+:root[data-platform="linux"] .tool-card {
+  border: 1px solid var(--color-hairline);
+  box-shadow: none;
+}
+
+/* Unknown / preview profile (ref-plan §7.5): neutral buttons, solid surface,
+   low blur — already the default; just ensure no glass leaks through. */
+:root[data-platform="unknown"] .titlebar,
+:root[data-platform="unknown"] .talk-header {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--color-surface-strong);
+}
+
+
+/* -------------------------------------------------------------------------
+   19. Reduced motion
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .app-shell::before {
+    animation: none;
+  }
+
+  /* Stop the perpetual pet idle/blink loops (ui-plan §15.4). */
+  .pet-body,
+  .pet-stage[data-mood="thinking"] .pet-body,
+  .pet-stage[data-mood="talking"] .pet-body,
+  .pet-stage[data-mood="tool"] .pet-body,
+  .pet-eye {
+    animation: none !important;
+  }
+}
+
+/* Short-window compaction (ref-plan §5.2: 360x560 talk minimum). The big pet
+   stage is gone from talk, so we only tighten spacing — never reset the shell
+   grid (that would re-impose the old 4-row layout and break the view templates). */
+@media (max-height: 620px) {
+  .talk-header {
+    padding: 8px 12px;
+  }
+  .chat-panel,
+  .control-panel {
+    padding-top: 10px;
+  }
+}
+
+@media (max-height: 520px) {
+  .talk-header {
+    padding: 6px 10px;
+  }
+  .talk-avatar {
+    width: 30px;
+    height: 30px;
+  }
+  .talk-meta strong {
+    font-size: 13px;
+  }
+  .pet-body {
+    width: 96px;
+    height: 92px;
+  }
+}

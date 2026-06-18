@@ -1,0 +1,607 @@
+/* iPet shell — AppShell, WindowChrome, CompanionCapsule, TalkWorkspace. */
+
+/* -------------------------------------------------------------------------
+   5. App shell + ambient background
+   ------------------------------------------------------------------------- */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 1120px);
+  height: 100%;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows:
+    var(--platform-titlebar-height)
+    minmax(154px, var(--pet-stage-height))
+    var(--tabbar-height)
+    minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: var(--radius-shell);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-window);
+}
+
+.app-shell::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  z-index: -2;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.8), transparent 58%),
+    linear-gradient(135deg, rgba(162, 210, 255, 0.28), transparent 40%),
+    linear-gradient(315deg, rgba(200, 180, 255, 0.18), transparent 46%),
+    var(--color-canvas);
+  filter: blur(36px);
+  transform: scale(1.08);
+  animation: ambient-flow 18s var(--ease-spring) infinite alternate;
+}
+
+.app-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 34%),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.52), transparent 48%);
+}
+
+/* Compact (148x166) — only the pet shows. */
+.app-shell.compact {
+  display: grid;
+  grid-template-rows: 1fr;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell.compact::before,
+.app-shell.compact::after {
+  display: none;
+}
+
+.app-shell.compact .titlebar,
+.app-shell.compact .panel {
+  display: none;
+}
+
+.app-shell.compact .pet-wrap {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: grab;
+}
+
+.app-shell.compact .pet-wrap:active,
+.app-shell.compact .pet-body:active {
+  cursor: grabbing;
+}
+
+.app-shell.compact .pet-stage {
+  width: 148px;
+  height: 166px;
+}
+
+.app-shell.compact .pet-body {
+  width: 104px;
+  height: 100px;
+}
+
+.app-shell.compact .pet-face {
+  inset: 24px 16px 18px;
+}
+
+.app-shell.compact .pet-status-line {
+  bottom: 8px;
+  color: var(--color-text);
+  font-size: 11px;
+}
+
+
+/* -------------------------------------------------------------------------
+   5b. New shell layout (ref-plan §5) — view-driven grid + talk header.
+   The old pet-stage + tabbar rows are gone; each view picks its own template.
+   ------------------------------------------------------------------------- */
+.app-shell[data-view="talk"] {
+  grid-template-rows:
+    var(--platform-titlebar-height)
+    auto
+    minmax(0, 1fr);
+}
+
+.app-shell[data-view="control"] {
+  grid-template-rows:
+    var(--platform-titlebar-height)
+    minmax(0, 1fr);
+}
+
+/* Capsule: only the pet shows, centered, no chrome. */
+.capsule {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+.capsule:active {
+  cursor: grabbing;
+}
+.app-shell[data-view="capsule"] .pet-wrap {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.app-shell[data-view="capsule"] .pet-wrap::before {
+  display: none;
+}
+.app-shell[data-view="capsule"] .pet-stage {
+  width: 148px;
+  height: 166px;
+}
+
+/* Talk header — small avatar + name + live state, replacing the big pet stage. */
+.talk-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+}
+.talk-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.6)),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.32), rgba(126, 87, 255, 0.22));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 4px 12px rgba(0, 113, 227, 0.18);
+}
+.talk-avatar-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.talk-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.talk-meta strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.talk-state {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chrome activity summary (sits between brand and window controls). */
+.chrome-activity {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 8px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* Control Center content scrolls independently of the titlebar. */
+.control-panel {
+  overflow: auto;
+}
+
+/* Control Center navigation — segmented bar on narrow windows, sidebar on wide
+   ones (ref-plan §5.3, §12.5). */
+.control-nav {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface-muted);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  overflow-x: auto;
+}
+.control-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background var(--duration-normal) var(--ease-spring),
+    color var(--duration-normal) var(--ease-spring);
+}
+.control-nav-item:hover {
+  background: var(--color-surface-strong);
+}
+.control-nav-item.active {
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  box-shadow: inset 0 1px 0 var(--color-hairline-on-glass);
+}
+.control-nav-item .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Tool library search box (ref-plan §6.2). */
+.tool-search {
+  display: block;
+  margin: 12px 0 8px;
+}
+.tool-search input {
+  width: 100%;
+}
+
+/* Usage trend chart — CSS bars, no chart library (ref-plan §6.3). */
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 72px;
+  padding: 8px 4px 0;
+  overflow-x: auto;
+}
+.trend-bar {
+  flex: 1 0 28px;
+  min-width: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 4px;
+}
+.trend-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--color-accent), var(--color-accent-hover));
+  transition: height var(--duration-normal) var(--ease-spring);
+}
+.trend-bar-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compact density — tighter spacing for small windows (ref-plan §6.5). */
+:root[data-density="compact"] .settings-card,
+:root[data-density="compact"] .tool-card,
+:root[data-density="compact"] .metric,
+:root[data-density="compact"] .chat-panel,
+:root[data-density="compact"] .settings-panel {
+  padding: 10px;
+  gap: 10px;
+}
+
+/* Manual reduced-motion override mirrors the @media preference (ref-plan §6.5). */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+.reduce-motion .app-shell::before,
+.reduce-motion .pet-body,
+.reduce-motion .pet-eye {
+  animation: none !important;
+}
+
+/* Wide Control Center: sidebar + detail (ref-plan §5.3). */
+@media (min-width: 720px) {
+  .app-shell[data-view="control"] {
+    grid-template-columns: 184px 1fr;
+    grid-template-rows: var(--platform-titlebar-height) minmax(0, 1fr);
+  }
+  .app-shell[data-view="control"] .titlebar {
+    grid-column: 1 / -1;
+  }
+  .control-nav {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 10px 8px;
+    border-bottom: 0;
+    border-right: 1px solid var(--color-hairline-on-glass);
+    overflow-x: visible;
+  }
+  .control-nav-item {
+    justify-content: flex-start;
+    height: 36px;
+  }
+  .control-panel {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+
+/* -------------------------------------------------------------------------
+   6. Titlebar + window actions + brand
+   ------------------------------------------------------------------------- */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: var(--platform-titlebar-height);
+  padding: 8px 10px 6px 12px;
+  user-select: none;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: 7px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55)),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.32), rgba(126, 87, 255, 0.22));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 6px 16px rgba(0, 113, 227, 0.16);
+}
+
+.window-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.window-button,
+.icon-button {
+  display: inline-grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  transition:
+    transform var(--duration-normal) var(--ease-spring),
+    background var(--duration-normal) var(--ease-spring),
+    color var(--duration-normal) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-spring);
+}
+
+.window-button:hover,
+.icon-button:hover {
+  transform: scale(1.04);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.window-button.danger:hover {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+/* -------------------------------------------------------------------------
+   7. Pet stage
+   ------------------------------------------------------------------------- */
+.pet-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 12px 12px 0;
+  padding: 12px 16px 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--platform-card-shadow);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  animation: fade-in-up 520ms var(--ease-spring) both;
+}
+
+.pet-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, rgba(0, 113, 227, 0.08), transparent 44%),
+    linear-gradient(315deg, rgba(175, 82, 222, 0.1), transparent 48%);
+}
+
+.pet-stage {
+  position: relative;
+  display: grid;
+  width: min(224px, 68vw);
+  height: 174px;
+  place-items: center;
+}
+
+.pet-body {
+  position: relative;
+  width: 128px;
+  height: 122px;
+  border: 0;
+  border-radius: 42% 42% 38% 38%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.94)),
+    #ffffff;
+  box-shadow:
+    inset 0 -14px 0 rgba(0, 113, 227, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 38px rgba(0, 0, 0, 0.14);
+  transform-origin: center bottom;
+  animation: pet-idle 2.8s var(--ease-spring) infinite;
+}
+
+.pet-body:hover {
+  filter: brightness(1.02);
+}
+
+.pet-stage[data-mood="thinking"] .pet-body {
+  animation: pet-thinking 1.1s var(--ease-spring) infinite;
+}
+
+.pet-stage[data-mood="talking"] .pet-body {
+  animation: pet-talk 0.42s var(--ease-spring) infinite;
+}
+
+.pet-stage[data-mood="tool"] .pet-body {
+  animation: pet-thinking 1.4s var(--ease-spring) infinite;
+  filter: drop-shadow(0 0 10px rgba(0, 113, 227, 0.28));
+}
+
+.pet-stage[data-mood="warning"] .pet-body {
+  animation: pet-idle 3.4s var(--ease-spring) infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.34));
+}
+
+.pet-ear {
+  position: absolute;
+  top: -14px;
+  width: 44px;
+  height: 46px;
+  border: 7px solid #ffffff;
+  border-radius: 14px 14px 6px 6px;
+  background: linear-gradient(180deg, #94d0ff, #75b8ff);
+}
+
+.pet-ear-left {
+  left: 12px;
+  transform: rotate(-18deg);
+}
+
+.pet-ear-right {
+  right: 12px;
+  transform: rotate(18deg);
+}
+
+.pet-face {
+  position: absolute;
+  inset: 28px 18px 22px;
+  border-radius: 34px;
+  background: linear-gradient(180deg, #edf7ff, #e9f1ff);
+}
+
+.pet-eye {
+  position: absolute;
+  top: 28px;
+  width: 13px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1d1d1f;
+  animation: blink 5s infinite;
+}
+
+.pet-eye-left {
+  left: 25px;
+}
+
+.pet-eye-right {
+  right: 25px;
+}
+
+.pet-mouth {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  width: 26px;
+  height: 10px;
+  border-bottom: 3px solid #1d1d1f;
+  border-radius: 0 0 20px 20px;
+  transform: translateX(-50%);
+}
+
+.pet-stage[data-mood="talking"] .pet-mouth {
+  height: 16px;
+  border: 3px solid #1d1d1f;
+  border-top: 0;
+}
+
+.pet-core {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 5px rgba(255, 159, 10, 0.16);
+}
+
+.pet-shadow {
+  position: absolute;
+  bottom: 17px;
+  width: 126px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.13);
+  filter: blur(3px);
+}
+
+.pet-status-line {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  min-height: 24px;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
