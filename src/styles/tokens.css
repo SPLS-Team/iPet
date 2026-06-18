@@ -1,0 +1,206 @@
+/* =========================================================================
+   iPet design tokens
+   Base tokens, platform profiles, and light/dark theme variables.
+   Card radius is capped at 8px per project constraint.
+   ========================================================================= */
+
+:root {
+  /* Color: surfaces */
+  --color-canvas: #f5f5f7;
+  --color-surface: rgba(255, 255, 255, 0.82);
+  --color-surface-strong: rgba(255, 255, 255, 0.94);
+  --color-surface-muted: rgba(242, 242, 247, 0.82);
+  --color-field: #f2f2f7;
+  --color-secondary: #e5e5ea;
+
+  /* Color: text */
+  --color-text: #1d1d1f;
+  --color-text-secondary: #515154;
+  --color-text-tertiary: #86868b;
+
+  /* Color: lines */
+  --color-hairline: rgba(0, 0, 0, 0.1);
+  --color-hairline-on-glass: rgba(255, 255, 255, 0.62);
+
+  /* Color: brand + status */
+  --color-accent: #0071e3;
+  --color-accent-hover: #147ce5;
+  --color-accent-soft: rgba(0, 113, 227, 0.1);
+  --color-accent-ring: rgba(0, 113, 227, 0.28);
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-danger: #d70015;
+  --color-danger-soft: rgba(215, 0, 21, 0.1);
+
+  /* Legacy aliases (kept so JS-emitted classes keep working during migration) */
+  --canvas: var(--color-canvas);
+  --text: var(--color-text);
+  --muted: var(--color-text-tertiary);
+  --hairline: var(--color-hairline);
+  --hairline-light: var(--color-hairline-on-glass);
+  --glass: var(--color-surface);
+  --glass-strong: var(--color-surface-strong);
+  --blue: var(--color-accent);
+  --blue-hover: var(--color-accent-hover);
+
+  /* Typography */
+  --text-hero: 24px;
+  --text-hero-lh: 1.12;
+  --text-title: 18px;
+  --text-title-lh: 1.22;
+  --text-subtitle: 15px;
+  --text-subtitle-lh: 1.3;
+  --text-body: 13.5px;
+  --text-body-lh: 1.55;
+  --text-caption: 11.5px;
+  --text-caption-lh: 1.45;
+  --text-code: 11.5px;
+  --text-code-lh: 1.5;
+  --font-stack:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-card: 8px;
+  --radius-shell: 8px;
+  --radius-control: 999px;
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-spring: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-fast: 140ms;
+  --duration-normal: 220ms;
+  --duration-slow: 420ms;
+
+  /* Shadows */
+  --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.16);
+  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.18);
+  --shadow-blue: 0 10px 24px rgba(0, 113, 227, 0.22);
+  --shadow-soft: var(--shadow-window);
+
+  /* Layout */
+  --titlebar-height: 44px;
+  --pet-stage-height: 184px;
+  --tabbar-height: 54px;
+
+  /* Platform defaults */
+  --platform-control-height: 36px;
+  --platform-titlebar-height: var(--titlebar-height);
+  --platform-card-shadow: var(--shadow-card);
+  --platform-material-blur: 20px;
+
+  font-family: var(--font-stack);
+  color: var(--color-text);
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-platform="macos"] {
+  --platform-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    system-ui, sans-serif;
+  --platform-control-height: 32px;
+  --platform-titlebar-height: 38px;
+  --platform-card-shadow: 0 8px 26px rgba(0, 0, 0, 0.08);
+  --platform-material-blur: 24px;
+  font-family: var(--platform-font);
+}
+
+:root[data-platform="windows"] {
+  --platform-font:
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  --platform-control-height: 36px;
+  --platform-titlebar-height: 44px;
+  --platform-card-shadow: 0 12px 34px rgba(0, 0, 0, 0.1);
+  --platform-material-blur: 18px;
+  font-family: var(--platform-font);
+}
+
+:root[data-platform="linux"] {
+  --platform-font:
+    "Inter", "Noto Sans CJK SC", "Noto Sans", system-ui, sans-serif;
+  --platform-control-height: 36px;
+  --platform-titlebar-height: 42px;
+  --platform-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --platform-material-blur: 8px;
+  font-family: var(--platform-font);
+}
+
+:root[data-platform="unknown"] {
+  --platform-material-blur: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #000000;
+    --color-surface: rgba(29, 29, 31, 0.78);
+    --color-surface-strong: rgba(44, 44, 46, 0.92);
+    --color-surface-muted: rgba(58, 58, 60, 0.72);
+    --color-field: rgba(58, 58, 60, 0.62);
+    --color-secondary: rgba(72, 72, 74, 0.86);
+
+    --color-text: #f5f5f7;
+    --color-text-secondary: #d2d2d7;
+    --color-text-tertiary: #98989d;
+
+    --color-hairline: rgba(255, 255, 255, 0.14);
+    --color-hairline-on-glass: rgba(255, 255, 255, 0.12);
+
+    --color-accent: #0a84ff;
+    --color-accent-hover: #409cff;
+    --color-accent-soft: rgba(10, 132, 255, 0.16);
+    --color-accent-ring: rgba(10, 132, 255, 0.34);
+    --color-success: #32d74b;
+    --color-warning: #ffd60a;
+    --color-danger: #ff453a;
+    --color-danger-soft: rgba(255, 69, 58, 0.18);
+
+    --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.4);
+    --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: #000000;
+  --color-surface: rgba(29, 29, 31, 0.78);
+  --color-surface-strong: rgba(44, 44, 46, 0.92);
+  --color-surface-muted: rgba(58, 58, 60, 0.72);
+  --color-field: rgba(58, 58, 60, 0.62);
+  --color-secondary: rgba(72, 72, 74, 0.86);
+
+  --color-text: #f5f5f7;
+  --color-text-secondary: #d2d2d7;
+  --color-text-tertiary: #98989d;
+
+  --color-hairline: rgba(255, 255, 255, 0.14);
+  --color-hairline-on-glass: rgba(255, 255, 255, 0.12);
+
+  --color-accent: #0a84ff;
+  --color-accent-hover: #409cff;
+  --color-accent-soft: rgba(10, 132, 255, 0.16);
+  --color-accent-ring: rgba(10, 132, 255, 0.34);
+  --color-success: #32d74b;
+  --color-warning: #ffd60a;
+  --color-danger: #ff453a;
+  --color-danger-soft: rgba(255, 69, 58, 0.18);
+
+  --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.55);
+}

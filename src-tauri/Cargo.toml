@@ -1,6 +1,6 @@
 [package]
 name = "ipet"
-version = "0.3.1"
+version = "0.4.0"
 description = "A lightweight desktop pet with local system tools and LLM chat."
 authors = ["iPet"]
 edition = "2021"

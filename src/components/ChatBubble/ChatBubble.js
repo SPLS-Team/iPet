@@ -1,5 +1,5 @@
-import { escapeHtml, renderMarkdown } from "../../markdown.js";
-import { icon } from "../../icons.js";
+import { escapeHtml, renderMarkdown } from "../../utils/markdown.js";
+import { icon } from "../../ui/icons.js";
 
 export function renderChat(container, state, handlers) {
   const messages = state.messages

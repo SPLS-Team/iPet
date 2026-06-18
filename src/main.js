@@ -1,201 +1,98 @@
-import { appWindow, invoke, listen } from "./tauriBridge.js";
-import { escapeHtml } from "./markdown.js";
-import { icon } from "./icons.js";
+import { appWindow, invoke, listen } from "./app/tauriBridge.js";
+import { state } from "./app/state.js";
+import { loadTheme, setThemePreference } from "./app/theme.js";
+import { createOverlayController } from "./app/overlay.js";
 import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
 import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
-import { renderSettings } from "./components/SettingsPanel/SettingsPanel.js";
+import { renderAppShell, capsuleStatusText } from "./shell/AppShell.js";
+import { talkActivityText } from "./shell/WindowChrome.js";
 import "./styles.css";
 
-const state = {
-  platform: detectPlatform(),
-  activeTab: "chat",
-  settingsTab: "model",
-  messages: [],
-  settings: null,
-  settingsDraft: null,
-  settingsStatus: "",
-  tools: [],
-  toolStatus: "",
-  stats: null,
-  statsStatus: "",
-  lastStatsRefreshAt: null,
-  chatBusy: false,
-  chatStatus: "",
-  toolActivity: "",
-  stopRequested: false,
-  currentRequestId: null,
-  alwaysOnTop: true,
-  compactMode: false,
-  thinkingStartedAt: null,
-  thinkingElapsedMs: 0,
-  thinkingTimer: null,
-  autoSystemCheckTimer: null,
-  autoSystemCheckBusy: false,
-  autoSystemStatus: "",
-  toast: null,
-  toastTimer: null,
-  dialog: null,
-  toolComposerMode: "import",
-  theme: "system",
-  settingsFieldErrors: {},
-  settingsSaveFailed: false,
-};
+const { renderOverlay, confirmDialog, closeDialog, showToast } = createOverlayController(state);
 
-let pet;
-let compactDragStart = null;
-let compactDragStarted = false;
+// The pet node is created once and moved between view slots on each render,
+// so streaming mood/line updates always target live DOM (ref-plan §11.3).
+const petRoot = document.createElement("div");
+const pet = createPetCharacter(petRoot);
+
+const ctx = {
+  state,
+  petRoot,
+  appWindow,
+  handlers: {
+    onToggleControl: toggleControl,
+    onCompact: () => setViewMode("capsule"),
+    onExpand: () => setViewMode("talk"),
+    onMinimize: () => appWindow.minimize(),
+    onClose: () => appWindow.close(),
+    onGoCapsule: () => setViewMode("capsule"),
+    onControlSection: setControlSection,
+    onRunSystemCheck: () => runAutoSystemCheck({ force: true }),
+    onSaveSettings: saveSettings,
+    onToggleTop: toggleAlwaysOnTop,
+    onTemporaryPassthrough: enableTemporaryPassthrough,
+    onSetToolEnabled: setToolEnabled,
+    onDeleteTool: requestDeleteTool,
+    onSaveTool: saveTool,
+    onImportTool: importTool,
+    onSetComposerMode: setToolComposerMode,
+    onSetTheme: setTheme,
+    onSetPlatformStyle: setPlatformStyle,
+    onSetDensity: setDensity,
+    onSetReduceMotion: setReduceMotion,
+    onRefreshStats: refreshStats,
+    onSend: sendMessage,
+    onStop: stopChat,
+    onGoSettings: (section) => setControlSection(section === "stats" ? "usage" : section),
+  },
+};
 
 bootstrap();
 
-/** Lightweight platform detection (ui-plan.md §5.0). No new deps. */
-function detectPlatform() {
-  const platform = navigator.userAgentData?.platform || navigator.platform || "";
-  const value = String(platform).toLowerCase();
-  if (value.includes("mac")) return "macos";
-  if (value.includes("win")) return "windows";
-  if (value.includes("linux")) return "linux";
-  return "unknown";
-}
-
-const THEME_KEY = "ipet:theme";
-const THEME_OPTIONS = ["system", "light", "dark"];
-
-/** Load persisted theme preference and apply it (ui-plan.md §14.1 phase 2). */
-async function loadTheme() {
-  try {
-    const stored = await invoke("get_preference", { key: THEME_KEY });
-    if (stored && THEME_OPTIONS.includes(stored)) {
-      state.theme = stored;
-    }
-  } catch {
-    /* preference command unavailable in older builds — fall back to system */
-  }
-  applyTheme();
-}
-
-function applyTheme() {
-  // "system" → no data-theme (CSS follows prefers-color-scheme).
-  if (state.theme === "system") {
-    delete document.documentElement.dataset.theme;
-  } else {
-    document.documentElement.dataset.theme = state.theme;
-  }
-}
-
 async function setTheme(theme) {
-  if (!THEME_OPTIONS.includes(theme)) return;
-  state.theme = theme;
-  applyTheme();
-  try {
-    await invoke("set_preference", { key: THEME_KEY, value: theme });
-  } catch (error) {
-    showToast(`主题保存失败：${String(error)}`, "error");
-  }
-  render();
+  await setThemePreference(theme, { state, invoke, showToast, render });
 }
 
 async function bootstrap() {
-  document.documentElement.dataset.platform = state.platform;
-  await loadTheme();
-
-  document.querySelector("#app").innerHTML = `
-    <main class="app-shell">
-      <header class="titlebar" data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region>
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span data-tauri-drag-region>iPet</span>
-        </div>
-        <div class="window-actions">
-          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
-          <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
-          <button class="window-button danger" data-action="close" title="关闭" aria-label="关闭">${icon("close", { label: "关闭" })}</button>
-        </div>
-      </header>
-      <section class="pet-wrap">
-        <div id="pet"></div>
-      </section>
-      <nav class="tabbar" aria-label="main" role="tablist">
-        <button class="tab active" data-tab="chat" role="tab" aria-selected="true">${icon("chat")}<span>聊天</span></button>
-        <button class="tab" data-tab="settings" role="tab" aria-selected="false">${icon("settings")}<span>设置</span></button>
-      </nav>
-      <section id="panel" class="panel"></section>
-      <div id="overlay" class="overlay" aria-live="polite"></div>
-    </main>
-  `;
-
-  pet = createPetCharacter(document.querySelector("#pet"));
-  bindShellEvents();
+  applyPlatformStyle();
+  applyDensity();
+  applyReduceMotion();
+  await loadTheme({ state, invoke });
   await bindChatEvents();
   await loadInitialData();
   render();
   scheduleAutoSystemCheck({ runNow: true });
 }
 
-// Esc closes the active (non-danger-confirmable) dialog. Danger dialogs also
-// close on Esc — canceling is safe; the destructive action only runs on confirm.
+// Esc closes the active dialog, or — with no dialog open — leaves the Control
+// Center back to the Talk Workspace (ref-plan §4.3). Cmd/Ctrl+, toggles the
+// Control Center; Cmd/Ctrl+L focuses the composer.
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.dialog) {
+  const mod = event.metaKey || event.ctrlKey;
+  if (event.key === "Escape") {
+    if (state.dialog) {
+      event.preventDefault();
+      closeDialog(false);
+    } else if (state.viewMode === "control") {
+      event.preventDefault();
+      setViewMode("talk");
+    }
+    return;
+  }
+  if (mod && event.key === ",") {
     event.preventDefault();
-    closeDialog(false);
+    if (state.viewMode !== "capsule") toggleControl();
+    return;
+  }
+  if (mod && (event.key === "l" || event.key === "L")) {
+    if (state.viewMode !== "talk") return;
+    const textarea = document.querySelector('[data-role="form"] [name="prompt"]');
+    if (textarea) {
+      event.preventDefault();
+      textarea.focus();
+    }
   }
 });
-
-function bindShellEvents() {
-  document.querySelector(".titlebar").addEventListener("mousedown", (event) => {
-    if (event.button !== 0 || event.target.closest("button")) return;
-    appWindow.startDragging();
-  });
-
-  const petWrap = document.querySelector(".pet-wrap");
-  petWrap.addEventListener("mousedown", (event) => {
-    if (!state.compactMode || event.button !== 0) return;
-    compactDragStart = { x: event.clientX, y: event.clientY };
-    compactDragStarted = false;
-  });
-  petWrap.addEventListener(
-    "click",
-    (event) => {
-      if (!state.compactMode) return;
-      if (compactDragStarted) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      toggleCompact(false);
-    },
-    true,
-  );
-  document.addEventListener("mousemove", (event) => {
-    if (!state.compactMode || !compactDragStart || compactDragStarted) return;
-    const moved = Math.hypot(event.clientX - compactDragStart.x, event.clientY - compactDragStart.y);
-    if (moved < 4) return;
-    compactDragStarted = true;
-    appWindow.startDragging();
-  });
-  document.addEventListener("mouseup", () => {
-    compactDragStart = null;
-    window.setTimeout(() => {
-      compactDragStarted = false;
-    }, 0);
-  });
-
-  document.querySelectorAll("[data-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeTab = button.dataset.tab;
-      render();
-    });
-  });
-
-  document.querySelector('[data-action="compact"]').addEventListener("click", () => {
-    toggleCompact(true);
-  });
-  document.querySelector('[data-action="minimize"]').addEventListener("click", async () => {
-    await appWindow.minimize();
-  });
-  document.querySelector('[data-action="close"]').addEventListener("click", async () => {
-    await appWindow.close();
-  });
-}
 
 async function bindChatEvents() {
   await listen("chat-stream", (event) => {
@@ -217,11 +114,11 @@ async function bindChatEvents() {
       appendAssistantDelta(payload.content);
       state.chatStatus = "";
       pet.setMood("talking");
-      // Fast path: just patch the last assistant bubble. Skip the full render
-      // (rebuilds every message + re-binds the form) which gets quadratic on
-      // long chats during streaming.
+      // Fast path: patch only the last assistant bubble. A full render rebuilds
+      // the shell + every message + re-binds the form, which goes quadratic on
+      // long chats while streaming (ref-plan §11.3, §15.7).
       const panel = document.querySelector("#panel");
-      const patched = state.activeTab === "chat" && updateChatStreaming(panel, state);
+      const patched = state.viewMode === "talk" && updateChatStreaming(panel, state);
       if (!patched) shouldRender = true;
     } else if (payload.kind === "done") {
       state.chatBusy = false;
@@ -280,38 +177,50 @@ async function refreshStatsSilently() {
 }
 
 function render() {
-  const shell = document.querySelector(".app-shell");
-  shell.classList.toggle("compact", state.compactMode);
-  renderOverlay();
-  if (state.compactMode) {
-    pet.setLine("点击展开");
+  const root = document.querySelector("#app");
+  renderAppShell(root, ctx);
+
+  if (state.viewMode === "capsule") {
+    pet.setLine(capsuleStatusText(state));
+    renderOverlay();
     return;
   }
 
-  document.querySelectorAll("[data-tab]").forEach((button) => {
-    const active = button.dataset.tab === state.activeTab;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", active ? "true" : "false");
-  });
-
-  const panel = document.querySelector("#panel");
-  if (state.activeTab === "chat") {
-    renderChat(panel, state, { onSend: sendMessage, onStop: stopChat, onGoSettings: goToSettings });
-  } else {
-    renderSettings(panel, state, {
-      onSettingsTab: changeSettingsTab,
-      onSaveSettings: saveSettings,
-      onToggleTop: toggleAlwaysOnTop,
-      onTemporaryPassthrough: enableTemporaryPassthrough,
-      onSetToolEnabled: setToolEnabled,
-      onDeleteTool: requestDeleteTool,
-      onSaveTool: saveTool,
-      onImportTool: importTool,
-      onSetComposerMode: setToolComposerMode,
-      onSetTheme: setTheme,
-      onRefreshStats: refreshStats,
-    });
+  // Talk workspace mounts the conversation into #panel. The Control Center's
+  // #panel is filled by bindControlCenter() inside renderAppShell.
+  if (state.viewMode === "talk") {
+    const panel = document.querySelector("#panel");
+    renderChat(panel, state, { onSend: sendMessage, onStop: stopChat, onGoSettings: ctx.handlers.onGoSettings });
   }
+
+  renderOverlay();
+}
+
+/* -------------------------------------------------------------------------- */
+/* View-mode navigation (ref-plan §4.3)                                       */
+/* -------------------------------------------------------------------------- */
+
+async function setViewMode(mode) {
+  state.viewMode = mode;
+  state.compactMode = mode === "capsule";
+  await appWindow.setCompact(state.compactMode);
+  render();
+}
+
+function toggleControl() {
+  setViewMode(state.viewMode === "control" ? "talk" : "control");
+}
+
+async function setControlSection(section) {
+  state.controlSection = section;
+  if (state.viewMode !== "control") {
+    state.viewMode = "control";
+    state.compactMode = false;
+    await appWindow.setCompact(false);
+  }
+  if (section === "tools") await loadToolsSafely();
+  if (section === "usage") await refreshStatsSilently();
+  render();
 }
 
 /** Switch the tool composer between import / http / local (ui-plan §10.5). */
@@ -320,122 +229,14 @@ function setToolComposerMode(mode) {
   render();
 }
 
-/** Jump to a settings sub-tab from elsewhere (e.g. empty-state chips). */
-async function goToSettings(tab) {
-  state.activeTab = "settings";
-  state.settingsTab = tab;
-  if (tab === "tools") await loadToolsSafely();
-  if (tab === "stats") await refreshStats();
-  render();
-}
-
-/** Render the floating overlay layer (toast + dialog). Cheap to call. */
-function renderOverlay() {
-  const overlay = document.querySelector("#overlay");
-  if (!overlay) return;
-  if (!state.dialog && !state.toast) {
-    overlay.innerHTML = "";
-    return;
-  }
-
-  let html = "";
-  if (state.dialog) {
-    const d = state.dialog;
-    const confirmClass = d.danger ? "text-button danger" : "text-button primary";
-    html += `
-      <div class="scrim" data-role="scrim">
-        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
-          <h3 class="dialog-title" id="dialog-title">${escapeHtml(d.title)}</h3>
-          ${d.body ? `<p class="dialog-body">${d.body}</p>` : ""}
-          <div class="dialog-actions">
-            <button class="text-button" type="button" data-role="dialog-cancel">${escapeHtml(d.cancelLabel || "取消")}</button>
-            <button class="${confirmClass}" type="button" data-role="dialog-confirm">${escapeHtml(d.confirmLabel || "确认")}</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-  if (state.toast) {
-    html += `<div class="toast" data-tone="${state.toast.tone || "default"}" role="status">${escapeHtml(state.toast.message)}</div>`;
-  }
-  overlay.innerHTML = html;
-
-  const scrim = overlay.querySelector('[data-role="scrim"]');
-  if (scrim) {
-    const cancel = overlay.querySelector('[data-role="dialog-cancel"]');
-    const confirm = overlay.querySelector('[data-role="dialog-confirm"]');
-    cancel?.addEventListener("click", () => closeDialog(false));
-    confirm?.addEventListener("click", () => closeDialog(true));
-    // Scrim click cancels only non-danger dialogs.
-    scrim.addEventListener("mousedown", (event) => {
-      if (event.target === scrim && !state.dialog?.danger) closeDialog(false);
-    });
-    // Focus trap: keep Tab within the dialog (ui-plan §15.1 / §12.3).
-    const dialogEl = scrim.querySelector(".dialog");
-    if (dialogEl) {
-      confirm?.focus();
-      scrim.addEventListener("keydown", (event) => {
-        if (event.key !== "Tab" || !dialogEl) return;
-        const focusable = dialogEl.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      });
-    }
-  }
-}
-
-/** Promise-based confirm dialog. Resolves true on confirm, false on cancel. */
-function confirmDialog(config) {
-  return new Promise((resolve) => {
-    state.dialog = { ...config, _resolve: resolve };
-    renderOverlay();
-  });
-}
-
-function closeDialog(confirmed) {
-  const dialog = state.dialog;
-  if (!dialog) return;
-  state.dialog = null;
-  renderOverlay();
-  dialog._resolve?.(confirmed);
-}
-
-/** Transient status toast. Auto-dismisses; one at a time. */
-function showToast(message, tone = "default") {
-  state.toast = { message, tone };
-  if (state.toastTimer) window.clearTimeout(state.toastTimer);
-  state.toastTimer = window.setTimeout(() => {
-    state.toast = null;
-    state.toastTimer = null;
-    renderOverlay();
-  }, 3000);
-  renderOverlay();
-}
-
-async function changeSettingsTab(tab) {
-  state.settingsTab = tab;
-  state.settingsStatus = "";
-  state.toolStatus = "";
-  state.statsStatus = "";
-  if (tab === "tools") await loadToolsSafely();
-  if (tab === "stats") await refreshStats();
-  render();
-}
-
 async function sendMessage(content) {
   if (state.chatBusy) return;
   if (!state.settings?.hasApiKey) {
-    state.activeTab = "settings";
-    state.settingsTab = "model";
+    state.controlSection = "model";
+    state.viewMode = "control";
+    state.compactMode = false;
     state.settingsStatus = "请先保存 API Key";
+    await appWindow.setCompact(false);
     pet.setMood("thinking");
     render();
     return;
@@ -523,33 +324,35 @@ function stopThinking() {
   updateThinkingDisplay();
 }
 
-async function toggleCompact(enabled) {
-  state.compactMode = enabled;
-  await appWindow.setCompact(enabled);
-  render();
-}
+/* -------------------------------------------------------------------------- */
+/* Settings save — partial override merged with the shared draft              */
+/* (Model and System views each save their own subset; the backend still      */
+/* receives a full LlmSettingsInput, ref-plan §6.1/§6.4.)                     */
+/* -------------------------------------------------------------------------- */
 
-async function saveSettings(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
+async function saveSettings(partial = {}) {
+  const base = state.settingsDraft ?? {};
   const input = {
-    apiKey: form.elements.apiKey.value,
-    clearApiKey: form.elements.clearApiKey.checked,
-    baseUrl: form.elements.baseUrl.value,
-    model: form.elements.model.value,
-    temperature: Number(form.elements.temperature.value),
-    maxContextMessages: Number(form.elements.maxContextMessages.value),
-    autoSystemCheckEnabled: form.elements.autoSystemCheckEnabled.checked,
-    autoSystemCheckIntervalMinutes: Number(form.elements.autoSystemCheckIntervalMinutes.value),
-    systemPrompt: form.elements.systemPrompt.value,
+    apiKey: partial.apiKey ?? "",
+    clearApiKey: partial.clearApiKey ?? false,
+    baseUrl: partial.baseUrl ?? base.baseUrl,
+    model: partial.model ?? base.model,
+    temperature: partial.temperature ?? base.temperature,
+    maxContextMessages: partial.maxContextMessages ?? base.maxContextMessages,
+    systemPrompt: partial.systemPrompt ?? base.systemPrompt,
+    autoSystemCheckEnabled: partial.autoSystemCheckEnabled ?? base.autoSystemCheckEnabled,
+    autoSystemCheckIntervalMinutes:
+      partial.autoSystemCheckIntervalMinutes ?? base.autoSystemCheckIntervalMinutes,
   };
 
-  // Front-end field validation (ui-plan §9.5): catch obviously bad input before
-  // hitting the backend, and surface the error next to the offending field.
+  // Validate only the fields this view is responsible for (ui-plan §9.5).
   const errors = {};
-  if (!input.baseUrl.trim()) errors.baseUrl = "Base URL 不能为空";
-  else if (!/^https?:\/\//i.test(input.baseUrl.trim())) errors.baseUrl = "Base URL 需以 http:// 或 https:// 开头";
-  if (!input.model.trim()) errors.model = "模型名不能为空";
+  if ("baseUrl" in partial) {
+    if (!input.baseUrl.trim()) errors.baseUrl = "Base URL 不能为空";
+    else if (!/^https?:\/\//i.test(input.baseUrl.trim()))
+      errors.baseUrl = "Base URL 需以 http:// 或 https:// 开头";
+  }
+  if ("model" in partial && !input.model.trim()) errors.model = "模型名不能为空";
   if (Object.keys(errors).length) {
     state.settingsFieldErrors = errors;
     showToast("请修正标红的字段", "error");
@@ -558,26 +361,35 @@ async function saveSettings(event) {
   }
   state.settingsFieldErrors = {};
 
-  let settingsSaved = false;
+  let saved = false;
   try {
     state.settings = await invoke("save_llm_settings", { input });
     state.settingsDraft = {
-      ...input,
       apiKey: "",
       clearApiKey: false,
+      baseUrl: state.settings.baseUrl,
+      model: state.settings.model,
+      temperature: state.settings.temperature,
+      maxContextMessages: state.settings.maxContextMessages,
+      autoSystemCheckEnabled: Boolean(state.settings.autoSystemCheckEnabled),
+      autoSystemCheckIntervalMinutes: Number(state.settings.autoSystemCheckIntervalMinutes ?? 10),
+      systemPrompt: state.settings.systemPrompt,
     };
     state.settingsStatus = "设置已保存";
     state.settingsSaveFailed = false;
     showToast("设置已保存", "success");
-    pet.setLine(state.settings.hasApiKey ? "模型已连接" : "等待 API Key");
-    settingsSaved = true;
+    saved = true;
   } catch (error) {
     state.settingsStatus = String(error);
     state.settingsSaveFailed = true;
     showToast(`保存失败：${String(error)}`, "error");
   }
   render();
-  if (settingsSaved) scheduleAutoSystemCheck({ runNow: true });
+  if (saved) {
+    const autoChanged =
+      "autoSystemCheckEnabled" in partial || "autoSystemCheckIntervalMinutes" in partial;
+    scheduleAutoSystemCheck({ runNow: autoChanged && state.settings.autoSystemCheckEnabled });
+  }
 }
 
 async function toggleAlwaysOnTop() {
@@ -731,19 +543,66 @@ async function refreshStats() {
   render();
 }
 
+/* -------------------------------------------------------------------------- */
+/* Appearance overrides (ref-plan §6.5)                                       */
+/* -------------------------------------------------------------------------- */
+
+function applyPlatformStyle() {
+  const p = state.platformStyle === "auto" ? state.platform : state.platformStyle;
+  document.documentElement.dataset.platform = p || "unknown";
+}
+
+function applyDensity() {
+  document.documentElement.dataset.density = state.density || "comfortable";
+}
+
+function applyReduceMotion() {
+  document.documentElement.classList.toggle("reduce-motion", Boolean(state.reduceMotion));
+}
+
+function setPlatformStyle(style) {
+  state.platformStyle = style;
+  applyPlatformStyle();
+  render();
+}
+
+function setDensity(density) {
+  state.density = density;
+  applyDensity();
+  render();
+}
+
+function setReduceMotion(enabled) {
+  state.reduceMotion = enabled;
+  applyReduceMotion();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Thinking timer + auto system check                                         */
+/* -------------------------------------------------------------------------- */
+
 function updateThinkingDisplay() {
   const status = document.querySelector('[data-role="chat-status-text"]');
   if (status) status.textContent = state.chatStatus || "";
 
   const clock = document.querySelector('[data-role="thinking-clock"]');
-  if (!clock) return;
-  if (!state.thinkingStartedAt) {
-    clock.hidden = true;
-    clock.textContent = "";
-    return;
+  if (clock) {
+    if (!state.thinkingStartedAt) {
+      clock.hidden = true;
+      clock.textContent = "";
+    } else {
+      clock.hidden = false;
+      clock.textContent = `思考 ${formatElapsed(state.thinkingElapsedMs)}`;
+    }
   }
-  clock.hidden = false;
-  clock.textContent = `思考 ${formatElapsed(state.thinkingElapsedMs)}`;
+
+  // Keep the capsule line + talk/chrome status in sync without a full render
+  // (ref-plan §11.3 — status changes patch only their own elements).
+  pet.setLine(capsuleStatusText(state));
+  const talkState = document.querySelector('[data-role="talk-state"]');
+  if (talkState) talkState.textContent = talkActivityText(state);
+  const chromeActivity = document.querySelector('[data-role="chrome-activity"]');
+  if (chromeActivity) chromeActivity.textContent = talkActivityText(state);
 }
 
 function formatElapsed(ms) {
@@ -773,15 +632,17 @@ function scheduleAutoSystemCheck({ runNow = false } = {}) {
   state.autoSystemCheckTimer = window.setInterval(runAutoSystemCheck, minutes * 60 * 1000);
 }
 
-async function runAutoSystemCheck() {
-  if (!state.settings?.autoSystemCheckEnabled || state.autoSystemCheckBusy) return;
+async function runAutoSystemCheck({ force = false } = {}) {
+  if (!force && (!state.settings?.autoSystemCheckEnabled || state.autoSystemCheckBusy)) return;
 
   state.autoSystemCheckBusy = true;
   state.autoSystemStatus = "正在调用 get_system_status 检查系统状态...";
   updateAutoSystemStatusDisplay();
+  updateThinkingDisplay();
 
   try {
     const snapshot = await invoke("get_system_status", { processLimit: 8 });
+    state.systemSnapshot = snapshot;
     const summary = formatSystemSnapshot(snapshot);
     state.autoSystemStatus = `${formatClockTime(new Date())} 检查完成：${summary}`;
     if (!state.chatBusy) pet.setLine(summary);
@@ -790,6 +651,9 @@ async function runAutoSystemCheck() {
   } finally {
     state.autoSystemCheckBusy = false;
     updateAutoSystemStatusDisplay();
+    updateThinkingDisplay();
+    // If the System view is open, refresh its live-status card with the new snapshot.
+    if (state.viewMode === "control" && state.controlSection === "system") render();
   }
 }
 

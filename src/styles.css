@@ -1,223 +1,4 @@
-/* =========================================================================
-   iPet styles
-   Organized per ui-plan.md §5.0 cross-platform CSS organization:
-   Base tokens → Platform tokens → Light/Dark → Global → App shell →
-   Components → Platform overrides → Responsive → Reduced motion.
-   Card radius is capped at 8px per project constraint.
-   ========================================================================= */
-
-/* -------------------------------------------------------------------------
-   1. Base design tokens (light defaults)
-   ------------------------------------------------------------------------- */
-:root {
-  /* Color: surfaces */
-  --color-canvas: #f5f5f7;
-  --color-surface: rgba(255, 255, 255, 0.82);
-  --color-surface-strong: rgba(255, 255, 255, 0.94);
-  --color-surface-muted: rgba(242, 242, 247, 0.82);
-  --color-field: #f2f2f7;
-  --color-secondary: #e5e5ea;
-
-  /* Color: text */
-  --color-text: #1d1d1f;
-  --color-text-secondary: #515154;
-  --color-text-tertiary: #86868b;
-
-  /* Color: lines */
-  --color-hairline: rgba(0, 0, 0, 0.1);
-  --color-hairline-on-glass: rgba(255, 255, 255, 0.62);
-
-  /* Color: brand + status */
-  --color-accent: #0071e3;
-  --color-accent-hover: #147ce5;
-  --color-accent-soft: rgba(0, 113, 227, 0.1);
-  --color-accent-ring: rgba(0, 113, 227, 0.28);
-  --color-success: #30d158;
-  --color-warning: #ff9f0a;
-  --color-danger: #d70015;
-  --color-danger-soft: rgba(215, 0, 21, 0.1);
-
-  /* Legacy aliases (kept so JS-emitted classes keep working during migration) */
-  --canvas: var(--color-canvas);
-  --text: var(--color-text);
-  --muted: var(--color-text-tertiary);
-  --hairline: var(--color-hairline);
-  --hairline-light: var(--color-hairline-on-glass);
-  --glass: var(--color-surface);
-  --glass-strong: var(--color-surface-strong);
-  --blue: var(--color-accent);
-  --blue-hover: var(--color-accent-hover);
-
-  /* Typography */
-  --text-hero: 24px;
-  --text-hero-lh: 1.12;
-  --text-title: 18px;
-  --text-title-lh: 1.22;
-  --text-subtitle: 15px;
-  --text-subtitle-lh: 1.3;
-  --text-body: 13.5px;
-  --text-body-lh: 1.55;
-  --text-caption: 11.5px;
-  --text-caption-lh: 1.45;
-  --text-code: 11.5px;
-  --text-code-lh: 1.5;
-  --font-stack:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "SF Mono", "Cascadia Code", Consolas, "JetBrains Mono", monospace;
-
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-
-  /* Radius (capped at 8px for cards per project constraint) */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-card: 8px;
-  --radius-shell: 8px;
-  --radius-control: 999px;
-
-  /* Motion */
-  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-spring: cubic-bezier(0.25, 1, 0.5, 1);
-  --duration-fast: 140ms;
-  --duration-normal: 220ms;
-  --duration-slow: 420ms;
-
-  /* Shadows */
-  --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.16);
-  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.08);
-  --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.18);
-  --shadow-blue: 0 10px 24px rgba(0, 113, 227, 0.22);
-  --shadow-soft: var(--shadow-window);
-
-  /* Layout */
-  --titlebar-height: 44px;
-  --pet-stage-height: 184px;
-  --tabbar-height: 54px;
-
-  /* Platform defaults (overridden per profile below) */
-  --platform-control-height: 36px;
-  --platform-titlebar-height: var(--titlebar-height);
-  --platform-card-shadow: var(--shadow-card);
-  --platform-material-blur: 20px;
-
-  font-family: var(--font-stack);
-  color: var(--color-text);
-  background: transparent;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* -------------------------------------------------------------------------
-   2. Platform profiles
-   ------------------------------------------------------------------------- */
-:root[data-platform="macos"] {
-  --platform-font:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-    system-ui, sans-serif;
-  --platform-control-height: 32px;
-  --platform-titlebar-height: 38px;
-  --platform-card-shadow: 0 8px 26px rgba(0, 0, 0, 0.08);
-  --platform-material-blur: 24px;
-  font-family: var(--platform-font);
-}
-
-:root[data-platform="windows"] {
-  --platform-font:
-    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  --platform-control-height: 36px;
-  --platform-titlebar-height: 44px;
-  --platform-card-shadow: 0 12px 34px rgba(0, 0, 0, 0.1);
-  --platform-material-blur: 18px;
-  font-family: var(--platform-font);
-}
-
-:root[data-platform="linux"] {
-  --platform-font:
-    "Inter", "Noto Sans CJK SC", "Noto Sans", system-ui, sans-serif;
-  --platform-control-height: 36px;
-  --platform-titlebar-height: 42px;
-  --platform-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --platform-material-blur: 8px;
-  font-family: var(--platform-font);
-}
-
-:root[data-platform="unknown"] {
-  --platform-material-blur: 14px;
-}
-
-/* -------------------------------------------------------------------------
-   3. Dark mode
-   - Manual override via [data-theme="light"|"dark"] wins over the system
-     preference. [data-theme="system"] (or unset) follows the OS.
-   ------------------------------------------------------------------------- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-canvas: #000000;
-    --color-surface: rgba(29, 29, 31, 0.78);
-    --color-surface-strong: rgba(44, 44, 46, 0.92);
-    --color-surface-muted: rgba(58, 58, 60, 0.72);
-    --color-field: rgba(58, 58, 60, 0.62);
-    --color-secondary: rgba(72, 72, 74, 0.86);
-
-    --color-text: #f5f5f7;
-    --color-text-secondary: #d2d2d7;
-    --color-text-tertiary: #98989d;
-
-    --color-hairline: rgba(255, 255, 255, 0.14);
-    --color-hairline-on-glass: rgba(255, 255, 255, 0.12);
-
-    --color-accent: #0a84ff;
-    --color-accent-hover: #409cff;
-    --color-accent-soft: rgba(10, 132, 255, 0.16);
-    --color-accent-ring: rgba(10, 132, 255, 0.34);
-    --color-success: #32d74b;
-    --color-warning: #ffd60a;
-    --color-danger: #ff453a;
-    --color-danger-soft: rgba(255, 69, 58, 0.18);
-
-    --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.5);
-    --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.4);
-    --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.55);
-  }
-}
-
-/* Forced dark / light regardless of OS preference. */
-:root[data-theme="dark"] {
-  --color-canvas: #000000;
-  --color-surface: rgba(29, 29, 31, 0.78);
-  --color-surface-strong: rgba(44, 44, 46, 0.92);
-  --color-surface-muted: rgba(58, 58, 60, 0.72);
-  --color-field: rgba(58, 58, 60, 0.62);
-  --color-secondary: rgba(72, 72, 74, 0.86);
-
-  --color-text: #f5f5f7;
-  --color-text-secondary: #d2d2d7;
-  --color-text-tertiary: #98989d;
-
-  --color-hairline: rgba(255, 255, 255, 0.14);
-  --color-hairline-on-glass: rgba(255, 255, 255, 0.12);
-
-  --color-accent: #0a84ff;
-  --color-accent-hover: #409cff;
-  --color-accent-soft: rgba(10, 132, 255, 0.16);
-  --color-accent-ring: rgba(10, 132, 255, 0.34);
-  --color-success: #32d74b;
-  --color-warning: #ffd60a;
-  --color-danger: #ff453a;
-  --color-danger-soft: rgba(255, 69, 58, 0.18);
-
-  --shadow-window: 0 24px 70px rgba(0, 0, 0, 0.5);
-  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.4);
-  --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.55);
-}
+@import "./styles/tokens.css";
 
 /* -------------------------------------------------------------------------
    4. Global resets
@@ -377,6 +158,259 @@ button .icon,
   color: var(--color-text);
   font-size: 11px;
 }
+
+/* -------------------------------------------------------------------------
+   5b. New shell layout (ref-plan §5) — view-driven grid + talk header.
+   The old pet-stage + tabbar rows are gone; each view picks its own template.
+   ------------------------------------------------------------------------- */
+.app-shell[data-view="talk"] {
+  grid-template-rows:
+    var(--platform-titlebar-height)
+    auto
+    minmax(0, 1fr);
+}
+
+.app-shell[data-view="control"] {
+  grid-template-rows:
+    var(--platform-titlebar-height)
+    minmax(0, 1fr);
+}
+
+/* Capsule: only the pet shows, centered, no chrome. */
+.capsule {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+.capsule:active {
+  cursor: grabbing;
+}
+.app-shell[data-view="capsule"] .pet-wrap {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.app-shell[data-view="capsule"] .pet-wrap::before {
+  display: none;
+}
+.app-shell[data-view="capsule"] .pet-stage {
+  width: 148px;
+  height: 166px;
+}
+
+/* Talk header — small avatar + name + live state, replacing the big pet stage. */
+.talk-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+}
+.talk-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.6)),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.32), rgba(126, 87, 255, 0.22));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 4px 12px rgba(0, 113, 227, 0.18);
+}
+.talk-avatar-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.talk-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.talk-meta strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.talk-state {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chrome activity summary (sits between brand and window controls). */
+.chrome-activity {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 8px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* Control Center content scrolls independently of the titlebar. */
+.control-panel {
+  overflow: auto;
+}
+
+/* Control Center navigation — segmented bar on narrow windows, sidebar on wide
+   ones (ref-plan §5.3, §12.5). */
+.control-nav {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface-muted);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  overflow-x: auto;
+}
+.control-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background var(--duration-normal) var(--ease-spring),
+    color var(--duration-normal) var(--ease-spring);
+}
+.control-nav-item:hover {
+  background: var(--color-surface-strong);
+}
+.control-nav-item.active {
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  box-shadow: inset 0 1px 0 var(--color-hairline-on-glass);
+}
+.control-nav-item .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Tool library search box (ref-plan §6.2). */
+.tool-search {
+  display: block;
+  margin: 12px 0 8px;
+}
+.tool-search input {
+  width: 100%;
+}
+
+/* Usage trend chart — CSS bars, no chart library (ref-plan §6.3). */
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 72px;
+  padding: 8px 4px 0;
+  overflow-x: auto;
+}
+.trend-bar {
+  flex: 1 0 28px;
+  min-width: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 4px;
+}
+.trend-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--color-accent), var(--color-accent-hover));
+  transition: height var(--duration-normal) var(--ease-spring);
+}
+.trend-bar-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compact density — tighter spacing for small windows (ref-plan §6.5). */
+:root[data-density="compact"] .settings-card,
+:root[data-density="compact"] .tool-card,
+:root[data-density="compact"] .metric,
+:root[data-density="compact"] .chat-panel,
+:root[data-density="compact"] .settings-panel {
+  padding: 10px;
+  gap: 10px;
+}
+
+/* Manual reduced-motion override mirrors the @media preference (ref-plan §6.5). */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+.reduce-motion .app-shell::before,
+.reduce-motion .pet-body,
+.reduce-motion .pet-eye {
+  animation: none !important;
+}
+
+/* Wide Control Center: sidebar + detail (ref-plan §5.3). */
+@media (min-width: 720px) {
+  .app-shell[data-view="control"] {
+    grid-template-columns: 184px 1fr;
+    grid-template-rows: var(--platform-titlebar-height) minmax(0, 1fr);
+  }
+  .app-shell[data-view="control"] .titlebar {
+    grid-column: 1 / -1;
+  }
+  .control-nav {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 10px 8px;
+    border-bottom: 0;
+    border-right: 1px solid var(--color-hairline-on-glass);
+    overflow-x: visible;
+  }
+  .control-nav-item {
+    justify-content: flex-start;
+    height: 36px;
+  }
+  .control-panel {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
 
 /* -------------------------------------------------------------------------
    6. Titlebar + window actions + brand
@@ -626,60 +660,6 @@ button .icon,
   text-align: center;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-/* -------------------------------------------------------------------------
-   8. Primary tabbar
-   ------------------------------------------------------------------------- */
-.tabbar {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin: 12px 12px 0;
-  padding: 6px;
-  border: 1px solid var(--color-hairline-on-glass);
-  border-radius: var(--radius-card);
-  background: var(--color-surface-muted);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  animation: fade-in-up 560ms var(--ease-spring) 70ms both;
-}
-
-.tab {
-  display: inline-flex;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-weight: 700;
-  transition:
-    transform var(--duration-normal) var(--ease-spring),
-    background var(--duration-normal) var(--ease-spring),
-    color var(--duration-normal) var(--ease-spring),
-    box-shadow var(--duration-normal) var(--ease-spring);
-}
-
-.tab:hover {
-  transform: scale(1.02);
-  background: var(--color-surface-strong);
-}
-
-.tab.active {
-  color: var(--color-text);
-  background: var(--color-surface-strong);
-  box-shadow:
-    inset 0 1px 0 var(--color-hairline-on-glass),
-    0 8px 22px rgba(0, 0, 0, 0.08);
-}
-
-.tab span {
-  font-size: 12px;
-  line-height: 1;
 }
 
 /* -------------------------------------------------------------------------
@@ -2278,15 +2258,15 @@ td[num] {
   background: #d1d1d6;
 }
 
-:root[data-platform="macos"] .window-button[data-action="compact"] {
+:root[data-platform="macos"] .window-button[data-chrome="compact"] {
   background: #ffbd2e;
 }
 
-:root[data-platform="macos"] .window-button[data-action="minimize"] {
+:root[data-platform="macos"] .window-button[data-chrome="minimize"] {
   background: #28c840;
 }
 
-:root[data-platform="macos"] .window-button[data-action="close"] {
+:root[data-platform="macos"] .window-button[data-chrome="close"] {
   background: #ff5f57;
 }
 

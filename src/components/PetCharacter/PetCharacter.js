@@ -1,4 +1,4 @@
-import { randomLocalReply, setPetMood } from "../../live2d/petAnimator.js";
+import { randomLocalReply, setPetMood } from "./petAnimator.js";
 
 export function createPetCharacter(root) {
   root.className = "pet-stage";
@@ -37,4 +37,3 @@ export function createPetCharacter(root) {
     },
   };
 }
-

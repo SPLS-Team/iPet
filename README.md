@@ -43,6 +43,7 @@ The project is built with **Tauri 2** (Rust backend + WebView frontend), uses **
 - **Transparent, frameless, always-on-top window** — drag anywhere, mouse-passthrough toggle, "compact" floating-head mode.
 - **CSS-animated pet character** with `idle / thinking / talking / tool / warning` states; ready to be swapped for a Live2D model later.
 - **Apple-style UI redesign** — design-token system (typography / spacing / motion / radius), light & dark mode with manual override, per-platform profiles (macOS / Windows / Linux) via `data-platform`, dependency-free inline SVG icons, custom dialog + toast system (no more `window.confirm`), segmented tool composer, temperature slider, stats Bento + prompt/completion breakdown, dialog focus trap, `prefers-reduced-motion` aware.
+- **Three-mode shell architecture (v0.4.0)** — the interface is rebuilt around a *Companion Capsule* (desktop-resident pet + one status line), a *Talk Workspace* (chat-first, the big pet stage replaced by a compact avatar header), and a *Control Center* (management surface separated from chat). Navigation is view-driven (`capsule` / `talk` / `control`) instead of the old chat/settings tabbar; `Cmd/Ctrl+,` opens the Control Center, `Esc` closes it, `Cmd/Ctrl+L` focuses the composer. Shell code is split into `src/shell/` (`AppShell`, `WindowChrome`, `CompanionCapsule`, `TalkWorkspace`, `ControlCenter`); the legacy chat/settings panels are embedded temporarily and get replaced section-by-section in later phases.
 - **Streaming chat** against any OpenAI-compatible `/chat/completions` endpoint; live-typing thinking timer; Markdown rendering with GFM tables, task lists, code blocks (via `marked` + `DOMPurify`).
 - **Function-calling with three tool kinds under one spec** — built-ins (`get_system_status`, `scan_disk`), user-defined HTTP tools, and `local` subprocess tools, all described by a `tool.json` manifest (schemaVersion 1 = http, 2 = +local) and runtime-hot-pluggable (per-request DB read, no cache).
 - **SSRF-hardened HTTP tools** — URL allow/deny at save time and again at request time (resolves DNS, rejects loopback/private/link-local/CGNAT/ULA, IPv4-mapped IPv6 too); 30 s timeout, 5-redirect cap, 2 MiB response ceiling.
@@ -52,7 +53,7 @@ The project is built with **Tauri 2** (Rust backend + WebView frontend), uses **
 - **At-rest API-key encryption** — the LLM API key is stored encrypted (ChaCha20-Poly1305) with a per-machine key, not plaintext.
 - **Token statistics** — per-day, per-model, per-request views; merges the tool-decision call and final streaming reply into one record.
 - **Cargo workspace** — the two built-in tools live as `tool-packages/*/rust/` crates that `src-tauri` depends on, so runtime and the distributable package share one source of truth.
-- **60 tests** (51 host + 8 scan-disk crate + 11 frontend) covering config validation, disk scanner, storage + migrations, tool-package parsing, dispatcher (incl. local subprocess), HTTP safety, secret encryption, and Markdown sanitization.
+- **75 tests** (51 host + 8 scan-disk crate + 16 frontend) covering config validation, disk scanner, storage + migrations, tool-package parsing, dispatcher (incl. local subprocess), HTTP safety, secret encryption, Markdown sanitization, and the three-mode shell + Control Center section render dispatch.
 - **`tracing` instrumentation** — runtime log level via `IPET_LOG` env var (e.g. `IPET_LOG=ipet_lib::tool_dispatcher=trace`).
 
 ### Quick start
@@ -70,13 +71,18 @@ Then open the **Settings** page inside the app and paste an OpenAI-compatible AP
 ```
 ┌────────────────────────── Frontend (Vite + vanilla JS) ──────────────────────────┐
 │                                                                                  │
-│   src/main.js                           ← top-level state + render loop          │
+│   src/main.js                           ← bootstrap + shell/event orchestration  │
+│   src/app/                              ← state, platform, theme, overlay, IPC   │
+│   src/shell/                            ← AppShell / WindowChrome / Capsule /    │
+│   │                                       TalkWorkspace / ControlCenter          │
+│   src/views/                            ← Control Center sections: Model / Tools │
+│   │                                       / Usage / System / Appearance         │
+│   src/ui/                               ← inline SVG icon set (no dependency)   │
+│   src/utils/                            ← markdown renderer + frontend tests     │
+│   src/styles.css                        ← CSS entrypoint for component styles    │
+│   src/styles/                           ← design tokens, platform + theme vars   │
 │   src/components/ChatBubble/            ← chat UI, streaming bubbles             │
-│   src/components/SettingsPanel/         ← model / tools / stats tabs             │
 │   src/components/PetCharacter/          ← CSS pet sprite + state                 │
-│   src/icons.js                          ← inline SVG icon set (no dependency)    │
-│   src/markdown.js                       ← marked + DOMPurify wrapper             │
-│   src/tauriBridge.js                    ← thin invoke / listen / window facade   │
 │                                                                                  │
 └──────────────────────────────── Tauri IPC ───────────────────────────────────────┘
 ┌────────────────────────── Backend (Rust, src-tauri/src/) ────────────────────────┐
@@ -321,11 +327,12 @@ ipet/
 ├── scripts/
 │   └── sync-openai-functions.js  # regenerates openai-function.json from tool.json
 ├── src/                     # Frontend
-│   ├── main.js
-│   ├── styles.css
-│   ├── markdown.js
-│   ├── tauriBridge.js
-│   ├── live2d/              # (placeholder for future Live2D)
+│   ├── main.js              # bootstrap + shell/event orchestration
+│   ├── app/                 # state / platform / theme / overlay / Tauri bridge
+│   ├── ui/                  # inline SVG icon system
+│   ├── utils/               # markdown renderer + Vitest coverage
+│   ├── styles.css           # style entrypoint and component styles
+│   ├── styles/              # design tokens, platform profiles, theme variables
 │   └── components/
 │       ├── ChatBubble/
 │       ├── PetCharacter/
@@ -355,7 +362,7 @@ ipet/
 
 - Harden `local` tools: import-time confirmation, command/path constraints, or pre-call user approval.
 - Tighter CSP (drop `style-src 'unsafe-inline'`).
-- Replace the CSS sprite with a Live2D model (the `src/live2d/` slot is reserved).
+- Replace the CSS sprite with a Live2D model inside `src/components/PetCharacter/`.
 - Frontend smoke tests; multi-round tool-call loop; backend chat abort (a local Stop button already cancels the UI side).
 - macOS / Linux smoke tests (the code is portable but only Windows is verified today).
 
@@ -405,13 +412,18 @@ npm run tauri:dev
 ```
 ┌────────────────────────── 前端（Vite + 原生 JS）─────────────────────────────────┐
 │                                                                                  │
-│   src/main.js                           ← 顶层状态与渲染循环                     │
+│   src/main.js                           ← 启动、窗口事件、业务调度               │
+│   src/app/                              ← state / platform / theme / overlay / IPC│
+│   src/shell/                            ← AppShell / WindowChrome / Capsule /    │
+│   │                                       TalkWorkspace / ControlCenter          │
+│   src/views/                            ← 控制中心分区：模型 / 工具 / 用量 /     │
+│   │                                       系统 / 外观                            │
+│   src/ui/                               ← 内联 SVG 图标集（无依赖）              │
+│   src/utils/                            ← Markdown 渲染器 + 前端测试             │
+│   src/styles.css                        ← 样式入口，承载组件样式                 │
+│   src/styles/                           ← 设计 token、平台 profile、主题变量     │
 │   src/components/ChatBubble/            ← 聊天 UI、流式气泡                      │
-│   src/components/SettingsPanel/         ← 模型 / 工具 / 统计 三个 tab            │
 │   src/components/PetCharacter/          ← CSS 角色精灵 + 状态切换                │
-│   src/icons.js                          ← 内联 SVG 图标集（无依赖）              │
-│   src/markdown.js                       ← marked + DOMPurify 封装                │
-│   src/tauriBridge.js                    ← invoke / listen / window 的轻封装      │
 │                                                                                  │
 └──────────────────────────────── Tauri IPC ───────────────────────────────────────┘
 ┌────────────────────────── 后端（Rust，src-tauri/src/）───────────────────────────┐
@@ -656,11 +668,12 @@ ipet/
 ├── scripts/
 │   └── sync-openai-functions.js  # 从 tool.json 重新生成 openai-function.json
 ├── src/                     # 前端
-│   ├── main.js
-│   ├── styles.css
-│   ├── markdown.js
-│   ├── tauriBridge.js
-│   ├── live2d/              # （预留给后续的 Live2D）
+│   ├── main.js              # 启动、窗口事件、业务调度
+│   ├── app/                 # state / platform / theme / overlay / Tauri bridge
+│   ├── ui/                  # 无依赖 inline SVG 图标
+│   ├── utils/               # Markdown 渲染器 + Vitest 测试
+│   ├── styles.css           # 样式入口，继续承载组件样式
+│   ├── styles/              # 设计 token、平台 profile、主题变量
 │   └── components/
 │       ├── ChatBubble/
 │       ├── PetCharacter/
@@ -690,7 +703,7 @@ ipet/
 
 - 收敛 local 工具安全：导入时确认提示、命令/路径约束，或调用前用户确认。
 - 收紧 CSP（去掉 `style-src 'unsafe-inline'`）。
-- 用 Live2D 模型替换 CSS 精灵（`src/live2d/` 目录已预留）。
+- 在 `src/components/PetCharacter/` 内用 Live2D 模型替换当前 CSS 精灵。
 - 前端 smoke 测试；多轮工具调用循环；后端聊天中断（本地 Stop 按钮已可在 UI 侧取消）。
 - macOS / Linux 冒烟测试（代码本身可移植，但目前仅在 Windows 上验证过）。
 
