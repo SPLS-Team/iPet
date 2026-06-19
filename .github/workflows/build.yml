@@ -1,15 +1,5 @@
 name: Build and Release
 
-# Borrowed the two-job (build → release) shape from SPLS-Team/XlsxSearcher, but
-# adds a test gate (they skip tests) and targets Tauri/Rust instead of
-# PyInstaller. Only Windows is built today — the code is portable but only
-# Windows is verified; adding macOS/Linux later needs Tauri's per-OS system
-# deps (webkit2gtk etc.) and is intentionally out of scope for now.
-#
-# - Push to master/dev/PR: build + test gate (no release).
-# - Push a v* tag: build + test gate, then auto-publish a Release with the
-#   NSIS installer + portable zip attached.
-
 on:
   push:
     branches:
@@ -28,8 +18,19 @@ permissions:
 
 jobs:
   build:
-    name: Build & test (Windows)
-    runs-on: windows-latest
+    name: Build & test (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact-setup: ipet-nsis
+            artifact-zip: ipet-portable-zip
+          - os: macos-latest
+            platform: macos
+            artifact-dmg: ipet-dmg
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -52,7 +53,7 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # --- Test gate: fail the run if any of these break. ---
+      # --- Test gate ---
       - name: Frontend build
         run: npm run build
 
@@ -64,24 +65,24 @@ jobs:
         working-directory: src-tauri
 
       - name: Rust unit tests
-        # --release: the debug test binary statically links the full Tauri
-        # stack and trips a Windows loader bug before tests run (see CLAUDE.md).
         run: cargo test --release --lib
         working-directory: src-tauri
 
-      # --- Build the distributable artifacts. ---
-      - name: Tauri build (NSIS)
+      # --- Build distributable artifacts ---
+      - name: Tauri build
         run: npm run tauri:build
 
+      # --- Windows-only: portable zip ---
       - name: Portable zip
+        if: matrix.platform == 'windows'
         run: npm run dist:zip
 
-      - name: Locate artifacts
-        id: artifacts
+      # --- Locate artifacts ---
+      - name: Locate artifacts (Windows)
+        id: artifacts-win
+        if: matrix.platform == 'windows'
         shell: bash
         run: |
-          # tauri build + dist:zip land under target/ (workspace root) since
-          # the Cargo workspace moved the output dir up from src-tauri/target.
           setup="$(ls target/release/bundle/nsis/iPet_*_x64-setup.exe 2>/dev/null | head -1)"
           zip="$(ls target/release/bundle/zip/iPet_*_x64_portable.zip 2>/dev/null | head -1)"
           echo "setup=$setup" >> "$GITHUB_OUTPUT"
@@ -89,19 +90,41 @@ jobs:
           test -n "$setup" -a -n "$zip"
           ls -la "$setup" "$zip"
 
+      - name: Locate artifacts (macOS)
+        id: artifacts-mac
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          dmg="$(ls target/release/bundle/dmg/iPet_*_*.dmg 2>/dev/null | head -1)"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
+          test -n "$dmg"
+          ls -la "$dmg"
+
+      # --- Upload artifacts ---
       - name: Upload NSIS installer
+        if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ipet-nsis
-          path: ${{ steps.artifacts.outputs.setup }}
+          name: ipet-windows-nsis
+          path: ${{ steps.artifacts-win.outputs.setup }}
           retention-days: 14
           if-no-files-found: error
 
       - name: Upload portable zip
+        if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ipet-portable-zip
-          path: ${{ steps.artifacts.outputs.zip }}
+          name: ipet-windows-portable-zip
+          path: ${{ steps.artifacts-win.outputs.zip }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload macOS DMG
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipet-macos-dmg
+          path: ${{ steps.artifacts-mac.outputs.dmg }}
           retention-days: 14
           if-no-files-found: error
 
@@ -109,7 +132,6 @@ jobs:
     name: Publish Release
     needs: build
     runs-on: ubuntu-latest
-    # Only publish when a v* tag is pushed — branch/PR builds stop after `build`.
     if: startsWith(github.ref, 'refs/tags/v')
 
     permissions:
@@ -130,31 +152,27 @@ jobs:
         id: files
         shell: bash
         run: |
-          setup="$(ls artifacts/ipet-nsis/iPet_*_x64-setup.exe | head -1)"
-          zip="$(ls artifacts/ipet-portable-zip/iPet_*_x64_portable.zip | head -1)"
+          setup="$(ls artifacts/ipet-windows-nsis/iPet_*_x64-setup.exe 2>/dev/null | head -1 || true)"
+          zip="$(ls artifacts/ipet-windows-portable-zip/iPet_*_x64_portable.zip 2>/dev/null | head -1 || true)"
+          dmg="$(ls artifacts/ipet-macos-dmg/iPet_*_*.dmg 2>/dev/null | head -1 || true)"
           echo "setup=$setup" >> "$GITHUB_OUTPUT"
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
+          ls -la "${setup:-/dev/null}" "${zip:-/dev/null}" "${dmg:-/dev/null}" 2>/dev/null || true
 
       - name: Build release notes
         id: notes
         shell: bash
-        env:
-          SETUP_PATH: ${{ steps.files.outputs.setup }}
-          ZIP_PATH: ${{ steps.files.outputs.zip }}
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          setup_name="$(basename "$SETUP_PATH")"
-          zip_name="$(basename "$ZIP_PATH")"
           {
             echo "## iPet v${tag}"
             echo
             echo "### 下载"
-            echo "- \`${setup_name}\` — NSIS 安装包"
-            echo "- \`${zip_name}\` — 绿色版(解压即用,需系统已装 WebView2 运行时)"
+            test -n "${{ steps.files.outputs.setup }}" && echo "- \`$(basename "${{ steps.files.outputs.setup }}")\` — Windows NSIS 安装包"
+            test -n "${{ steps.files.outputs.zip }}" && echo "- \`$(basename "${{ steps.files.outputs.zip }}")\` — Windows 绿色版"
+            test -n "${{ steps.files.outputs.dmg }}" && echo "- \`$(basename "${{ steps.files.outputs.dmg }}")\` — macOS DMG"
             echo
-            # Human-readable changelog from the annotated tag body (the bulleted
-            # feature list written when tagging). Falls back gracefully if the
-            # tag is lightweight / has no body.
             tag_body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
             if [ -n "$tag_body" ]; then
               echo "### 本次更新"
@@ -164,7 +182,6 @@ jobs:
             fi
             echo "### 自上一个版本以来的提交"
             echo
-            # Commits between the previous tag and this one, one-line each.
             if git rev-list --tags --skip=1 --max-count=1 >/dev/null 2>&1; then
               prev="$(git describe --tags --abbrev=0 "${GITHUB_REF}^" 2>/dev/null || true)"
               range="${prev:+${prev}..}${GITHUB_REF}"
@@ -184,5 +201,6 @@ jobs:
           files: |
             ${{ steps.files.outputs.setup }}
             ${{ steps.files.outputs.zip }}
+            ${{ steps.files.outputs.dmg }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

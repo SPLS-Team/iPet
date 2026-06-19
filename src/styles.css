@@ -98,7 +98,7 @@
 
   /* Layout */
   --titlebar-height: 44px;
-  --pet-stage-height: 184px;
+  --pet-stage-height: 228px;
   --tabbar-height: 54px;
 
   /* Platform defaults (overridden per profile below) */
@@ -282,7 +282,7 @@ button .icon,
 .app-shell {
   position: relative;
   isolation: isolate;
-  width: min(100%, 1120px);
+  width: 100%;
   height: 100%;
   margin: 0 auto;
   display: grid;
@@ -2259,46 +2259,42 @@ td[num] {
    18. Platform overrides
    ------------------------------------------------------------------------- */
 
-/* macOS: lighter titlebar, traffic-light-style buttons on the left. */
+/* macOS: native traffic-lights via titleBarStyle "Overlay". Clear the
+   traffic-light area on the left; hide the custom close / minimise buttons
+   (the system handles those); centre the brand and keep the compact toggle. */
 :root[data-platform="macos"] .titlebar {
-  padding: 8px 12px 6px 12px;
+  position: relative;
+  justify-content: flex-end;
+  padding: 8px 12px 6px 76px;
 }
 
-:root[data-platform="macos"] .window-actions {
-  order: -1;
-  margin-right: 4px;
+:root[data-platform="macos"] .brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-:root[data-platform="macos"] .window-button {
-  min-width: 14px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  font-size: 0;
-  background: #d1d1d6;
+:root[data-platform="macos"] .window-button[data-action="close"],
+:root[data-platform="macos"] .window-button[data-action="minimize"] {
+  display: none;
 }
 
 :root[data-platform="macos"] .window-button[data-action="compact"] {
-  background: #ffbd2e;
+  min-width: auto;
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-glass);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-:root[data-platform="macos"] .window-button[data-action="minimize"] {
-  background: #28c840;
-}
-
-:root[data-platform="macos"] .window-button[data-action="close"] {
-  background: #ff5f57;
-}
-
-:root[data-platform="macos"] .window-button:hover {
-  transform: scale(1.08);
-  filter: brightness(0.94);
-  background: #d1d1d6;
-}
-
-:root[data-platform="macos"] .window-button.danger:hover {
-  background: #ff5f57;
-  color: #ffffff;
+:root[data-platform="macos"] .window-button[data-action="compact"]:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 
 :root[data-platform="macos"] .settings-card {

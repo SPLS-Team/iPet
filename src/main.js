@@ -106,9 +106,9 @@ async function bootstrap() {
           <span data-tauri-drag-region>iPet</span>
         </div>
         <div class="window-actions">
-          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
-          <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
           <button class="window-button danger" data-action="close" title="关闭" aria-label="关闭">${icon("close", { label: "关闭" })}</button>
+          <button class="window-button" data-action="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
+          <button class="window-button" data-action="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
         </div>
       </header>
       <section class="pet-wrap">
