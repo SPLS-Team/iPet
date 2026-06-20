@@ -23,6 +23,7 @@ const ENVELOPE_PREFIX: &str = "enc:v1:";
 #[derive(Clone)]
 pub struct MachineKey {
     cipher: ChaCha20Poly1305,
+    #[allow(dead_code)]
     path: PathBuf,
 }
 
@@ -57,6 +58,7 @@ impl MachineKey {
     }
 
     /// Path to the on-disk key file. Useful for diagnostics.
+    #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
     }

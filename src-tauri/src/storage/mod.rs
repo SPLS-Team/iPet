@@ -282,6 +282,7 @@ pub struct RetentionReport {
 }
 
 /// Current schema version. Bump when adding a migration to `MIGRATIONS`.
+#[allow(dead_code)]
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// Ordered schema migrations. `MIGRATIONS[i]` advances the DB from
@@ -410,6 +411,7 @@ const MIGRATIONS: &[fn(&Connection) -> AppResult<()>] = &[
 ];
 
 impl Storage {
+    #[allow(dead_code)]
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
         Self::open_with_secret(path, None)
     }

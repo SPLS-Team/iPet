@@ -685,6 +685,7 @@ pub fn recent_system_errors(args: RecentSystemErrorsArgs) -> Result<String, Stri
     .map_err(|err| err.to_string())
 }
 
+#[allow(unused_variables)]
 fn fetch_system_errors(hours: u64, limit: usize) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
