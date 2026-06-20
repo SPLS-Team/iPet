@@ -1,0 +1,34 @@
+{
+  "type": "function",
+  "function": {
+    "name": "list_processes",
+    "description": "列出当前进程，支持按 CPU、内存或名称排序，并可按名称/命令过滤。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 30,
+          "description": "最多返回多少个进程。"
+        },
+        "sortBy": {
+          "type": "string",
+          "enum": [
+            "cpu",
+            "memory",
+            "name"
+          ],
+          "default": "cpu",
+          "description": "排序方式。"
+        },
+        "filter": {
+          "type": "string",
+          "description": "按进程名或命令行包含关系过滤。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

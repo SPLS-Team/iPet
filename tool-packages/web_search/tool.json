@@ -1,0 +1,37 @@
+{
+  "name": "web_search",
+  "displayName": "网页搜索",
+  "description": "用免 Key 的 DuckDuckGo Instant Answer 接口搜索，返回摘要与相关链接。注意：仅返回摘要/百科类结果，非完整网页搜索。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "搜索关键词。"
+      },
+      "maxResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 8,
+        "description": "最多返回多少条结果。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["network"],
+  "safety": {
+    "readOnly": true,
+    "notes": "向 DuckDuckGo Instant Answer API 发起一次 HTTPS GET，带超时与响应大小上限，不发送任何 Key。结果质量有限。"
+  }
+}

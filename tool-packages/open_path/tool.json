@@ -1,0 +1,30 @@
+{
+  "name": "open_path",
+  "displayName": "打开路径",
+  "description": "用系统默认方式打开本地文件、目录或 http/https 网址。属于有副作用的操作，调用前应确认目标可信。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["path"],
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要打开的本地路径或 http/https 网址。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["process.spawn", "shell.open"],
+  "safety": {
+    "readOnly": false,
+    "notes": "会用系统默认程序打开目标，请确认路径或 URL 可信后再调用。"
+  }
+}

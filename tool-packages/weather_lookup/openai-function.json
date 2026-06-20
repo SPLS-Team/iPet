@@ -1,0 +1,29 @@
+{
+  "type": "function",
+  "function": {
+    "name": "weather_lookup",
+    "description": "查询指定城市的当前天气（温度、体感、湿度、风速、天气描述），使用免 Key 的 wttr.in 服务。",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "city"
+      ],
+      "properties": {
+        "city": {
+          "type": "string",
+          "description": "城市名称，例如 Tokyo、北京。"
+        },
+        "units": {
+          "type": "string",
+          "enum": [
+            "c",
+            "f"
+          ],
+          "default": "c",
+          "description": "温度单位：c 摄氏、f 华氏。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

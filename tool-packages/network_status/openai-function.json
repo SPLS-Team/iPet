@@ -1,0 +1,35 @@
+{
+  "type": "function",
+  "function": {
+    "name": "network_status",
+    "description": "检查 DNS 解析、TCP 连通性，并可返回本机网络接口摘要。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dnsHost": {
+          "type": "string",
+          "default": "example.com",
+          "description": "用于 DNS 解析测试的域名。"
+        },
+        "tcpTarget": {
+          "type": "string",
+          "default": "1.1.1.1:53",
+          "description": "用于 TCP 连通性测试的 host:port。"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000,
+          "default": 1200,
+          "description": "TCP 连接超时毫秒数。"
+        },
+        "includeInterfaces": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否返回本机网络接口摘要。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

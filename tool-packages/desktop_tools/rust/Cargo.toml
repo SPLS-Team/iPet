@@ -1,0 +1,13 @@
+[package]
+name = "ipet-tool-desktop-tools"
+version = "1.0.0"
+edition = "2021"
+description = "iPet built-in read-only desktop helper tools."
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+walkdir = { workspace = true }
+ureq = { workspace = true }

@@ -1,0 +1,40 @@
+{
+  "type": "function",
+  "function": {
+    "name": "read_text_file",
+    "description": "读取指定文本文件的部分内容，带字节数和行数上限，适合查看代码、日志和文档片段。",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "要读取的本地文本文件路径。"
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576,
+          "default": 65536,
+          "description": "最多读取多少字节。"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "从第几行开始返回。"
+        },
+        "maxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "default": 300,
+          "description": "最多返回多少行。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "git_status",
+  "displayName": "Git 状态",
+  "description": "读取指定 Git 仓库的分支、HEAD、工作区状态和可选 diff 摘要。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "default": ".",
+        "description": "Git 仓库内任意路径。"
+      },
+      "includeDiff": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否包含完整 diff 文本。"
+      },
+      "maxDiffChars": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 50000,
+        "default": 12000,
+        "description": "includeDiff 为 true 时最多返回多少字符。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["process.spawn", "filesystem.read"],
+  "safety": {
+    "readOnly": true,
+    "notes": "只运行固定 git 读取命令，不执行写操作。"
+  }
+}

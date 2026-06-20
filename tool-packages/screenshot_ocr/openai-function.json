@@ -1,0 +1,25 @@
+{
+  "type": "function",
+  "function": {
+    "name": "screenshot_ocr",
+    "description": "截取主屏幕并通过 tesseract 做 OCR 返回文本。需要系统已安装 tesseract；隐私风险较高，调用前应明确确认。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "default": "eng",
+          "description": "tesseract 语言代码，例如 eng、chi_sim。"
+        },
+        "maxChars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 20000,
+          "description": "最多返回多少字符的识别文本。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

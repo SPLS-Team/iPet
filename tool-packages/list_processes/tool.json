@@ -1,0 +1,42 @@
+{
+  "name": "list_processes",
+  "displayName": "进程列表",
+  "description": "列出当前进程，支持按 CPU、内存或名称排序，并可按名称/命令过滤。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 30,
+        "description": "最多返回多少个进程。"
+      },
+      "sortBy": {
+        "type": "string",
+        "enum": ["cpu", "memory", "name"],
+        "default": "cpu",
+        "description": "排序方式。"
+      },
+      "filter": {
+        "type": "string",
+        "description": "按进程名或命令行包含关系过滤。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["system.process.read"],
+  "safety": {
+    "readOnly": true,
+    "notes": "只读取进程元数据，不终止或修改进程。"
+  }
+}

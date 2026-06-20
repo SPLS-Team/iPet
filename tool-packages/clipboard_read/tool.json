@@ -1,0 +1,24 @@
+{
+  "name": "clipboard_read",
+  "displayName": "读取剪贴板",
+  "description": "读取系统剪贴板中的文本，方便让 iPet 处理刚复制的内容。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "permissions": ["clipboard.read"],
+  "safety": {
+    "readOnly": true,
+    "notes": "只读取剪贴板文本，不写入剪贴板。文本长度超过上限会被截断。"
+  }
+}

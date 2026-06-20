@@ -28,6 +28,31 @@ mod tools;
 const SCAN_DISK_TOOL_JSON: &str = include_str!("../../../tool-packages/scan_disk/tool.json");
 const SYSTEM_STATUS_TOOL_JSON: &str =
     include_str!("../../../tool-packages/get_system_status/tool.json");
+const SEARCH_FILES_TOOL_JSON: &str = include_str!("../../../tool-packages/search_files/tool.json");
+const READ_TEXT_FILE_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/read_text_file/tool.json");
+const GIT_STATUS_TOOL_JSON: &str = include_str!("../../../tool-packages/git_status/tool.json");
+const LIST_PROCESSES_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/list_processes/tool.json");
+const NETWORK_STATUS_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/network_status/tool.json");
+const CLIPBOARD_READ_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/clipboard_read/tool.json");
+const OPEN_PATH_TOOL_JSON: &str = include_str!("../../../tool-packages/open_path/tool.json");
+const RECENT_SYSTEM_ERRORS_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/recent_system_errors/tool.json");
+const PACKAGE_SCRIPTS_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/package_scripts/tool.json");
+const RUN_PROJECT_CHECK_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/run_project_check/tool.json");
+const DISK_CLEANUP_CANDIDATES_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/disk_cleanup_candidates/tool.json");
+const CREATE_NOTE_TOOL_JSON: &str = include_str!("../../../tool-packages/create_note/tool.json");
+const WEATHER_LOOKUP_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/weather_lookup/tool.json");
+const WEB_SEARCH_TOOL_JSON: &str = include_str!("../../../tool-packages/web_search/tool.json");
+const SCREENSHOT_OCR_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/screenshot_ocr/tool.json");
 
 /// Minimal projection of a `tool.json` manifest — just the fields needed to
 /// seed a builtin `ToolConfig`. The full manifest (runtime, permissions,
@@ -48,9 +73,8 @@ fn default_true() -> bool {
 }
 
 fn builtin_tool_from_manifest(raw: &str) -> AppResult<ToolConfig> {
-    let manifest: BuiltinToolManifest = serde_json::from_str(raw).map_err(|err| {
-        AppError::InvalidInput(format!("解析内置工具 manifest 失败: {err}"))
-    })?;
+    let manifest: BuiltinToolManifest = serde_json::from_str(raw)
+        .map_err(|err| AppError::InvalidInput(format!("解析内置工具 manifest 失败: {err}")))?;
     Ok(ToolConfig {
         name: manifest.name,
         display_name: manifest.display_name,
@@ -300,10 +324,7 @@ impl Storage {
         Self::open_with_secret(path, None)
     }
 
-    pub fn open_with_secret(
-        path: impl AsRef<Path>,
-        secret: Option<MachineKey>,
-    ) -> AppResult<Self> {
+    pub fn open_with_secret(path: impl AsRef<Path>, secret: Option<MachineKey>) -> AppResult<Self> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -350,22 +371,21 @@ impl Storage {
             params![policy.chat_keep as i64],
         )?;
 
-        let token_cutoff = (now - chrono::Duration::days(policy.token_usage_days as i64))
-            .to_rfc3339();
+        let token_cutoff =
+            (now - chrono::Duration::days(policy.token_usage_days as i64)).to_rfc3339();
         let tokens_removed = conn.execute(
             "DELETE FROM token_usage WHERE created_at < ?1",
             params![token_cutoff],
         )?;
 
-        let samples_cutoff = (now - chrono::Duration::days(policy.system_samples_days as i64))
-            .to_rfc3339();
+        let samples_cutoff =
+            (now - chrono::Duration::days(policy.system_samples_days as i64)).to_rfc3339();
         let samples_removed = conn.execute(
             "DELETE FROM system_samples WHERE created_at < ?1",
             params![samples_cutoff],
         )?;
 
-        let disk_cutoff = (now - chrono::Duration::days(policy.disk_scan_days as i64))
-            .to_rfc3339();
+        let disk_cutoff = (now - chrono::Duration::days(policy.disk_scan_days as i64)).to_rfc3339();
         let disk_removed = conn.execute(
             "DELETE FROM disk_scan_cache WHERE scanned_at < ?1",
             params![disk_cutoff],
@@ -406,13 +426,27 @@ impl Storage {
     }
 
     fn seed_builtin_tools(&self) -> AppResult<()> {
-        // The builtin tool manifests are embedded from tool-packages/*/tool.json
-        // (see `SCAN_DISK_TOOL_JSON` / `SYSTEM_STATUS_TOOL_JSON`), so editing a
-        // tool's schema in its package is the only place that change needs to
-        // land — the runtime seed picks it up on next start.
+        // Builtin tool manifests are embedded from tool-packages/*/tool.json,
+        // so editing a tool's schema in its package is the only place that
+        // change needs to land — the runtime seed picks it up on next start.
         let tools = [
             builtin_tool_from_manifest(SYSTEM_STATUS_TOOL_JSON)?,
             builtin_tool_from_manifest(SCAN_DISK_TOOL_JSON)?,
+            builtin_tool_from_manifest(SEARCH_FILES_TOOL_JSON)?,
+            builtin_tool_from_manifest(READ_TEXT_FILE_TOOL_JSON)?,
+            builtin_tool_from_manifest(GIT_STATUS_TOOL_JSON)?,
+            builtin_tool_from_manifest(LIST_PROCESSES_TOOL_JSON)?,
+            builtin_tool_from_manifest(NETWORK_STATUS_TOOL_JSON)?,
+            builtin_tool_from_manifest(CLIPBOARD_READ_TOOL_JSON)?,
+            builtin_tool_from_manifest(OPEN_PATH_TOOL_JSON)?,
+            builtin_tool_from_manifest(RECENT_SYSTEM_ERRORS_TOOL_JSON)?,
+            builtin_tool_from_manifest(PACKAGE_SCRIPTS_TOOL_JSON)?,
+            builtin_tool_from_manifest(RUN_PROJECT_CHECK_TOOL_JSON)?,
+            builtin_tool_from_manifest(DISK_CLEANUP_CANDIDATES_TOOL_JSON)?,
+            builtin_tool_from_manifest(CREATE_NOTE_TOOL_JSON)?,
+            builtin_tool_from_manifest(WEATHER_LOOKUP_TOOL_JSON)?,
+            builtin_tool_from_manifest(WEB_SEARCH_TOOL_JSON)?,
+            builtin_tool_from_manifest(SCREENSHOT_OCR_TOOL_JSON)?,
         ];
 
         for tool in tools {
@@ -424,9 +458,7 @@ impl Storage {
     /// Acquire the connection guard. `pub(crate)` so the domain modules
     /// (`chat`, `tools`, …) under `storage/` can run queries against the
     /// shared connection.
-    pub(crate) fn lock(
-        &self,
-    ) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
+    pub(crate) fn lock(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
         self.conn
             .lock()
             .map_err(|_| AppError::Config("database lock poisoned".to_string()))
@@ -446,10 +478,12 @@ pub(crate) fn read_tool_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ToolCon
         kind: row.get(3)?,
         enabled: row.get::<_, i64>(4)? != 0,
         built_in: row.get::<_, i64>(5)? != 0,
-        parameters: serde_json::from_str(&parameters_json).unwrap_or_else(|_| json!({
-            "type": "object",
-            "properties": {}
-        })),
+        parameters: serde_json::from_str(&parameters_json).unwrap_or_else(|_| {
+            json!({
+                "type": "object",
+                "properties": {}
+            })
+        }),
         http: http_json.and_then(|raw| serde_json::from_str(&raw).ok()),
         local: local_json.and_then(|raw| serde_json::from_str(&raw).ok()),
         updated_at: row.get(8)?,
@@ -667,12 +701,32 @@ mod tests {
         let (_dir, storage) = fresh_storage();
         let tools = storage.list_tools().unwrap();
         let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
+        for expected in [
+            "get_system_status",
+            "scan_disk",
+            "search_files",
+            "read_text_file",
+            "git_status",
+            "list_processes",
+            "network_status",
+            "clipboard_read",
+            "open_path",
+            "recent_system_errors",
+            "package_scripts",
+            "run_project_check",
+            "disk_cleanup_candidates",
+            "create_note",
+            "weather_lookup",
+            "web_search",
+            "screenshot_ocr",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "missing built-in tool {expected}, got {names:?}"
+            );
+        }
         assert!(
-            names.contains(&"get_system_status") && names.contains(&"scan_disk"),
-            "missing built-in tools, got {names:?}"
-        );
-        assert!(
-            tools.iter().filter(|t| t.built_in).count() >= 2,
+            tools.iter().filter(|t| t.built_in).count() >= 17,
             "built-in tools must keep their built_in flag"
         );
     }
@@ -721,7 +775,9 @@ mod tests {
     fn recent_messages_respects_limit() {
         let (_dir, storage) = fresh_storage();
         for i in 0..5 {
-            storage.save_chat_message("user", &format!("msg-{i}")).unwrap();
+            storage
+                .save_chat_message("user", &format!("msg-{i}"))
+                .unwrap();
         }
         let recent = storage.recent_messages(2).unwrap();
         assert_eq!(recent.len(), 2);
@@ -858,7 +914,9 @@ mod tests {
     fn prune_caps_chat_history_to_policy() {
         let (_dir, storage) = fresh_storage();
         for i in 0..30 {
-            storage.save_chat_message("user", &format!("msg-{i}")).unwrap();
+            storage
+                .save_chat_message("user", &format!("msg-{i}"))
+                .unwrap();
         }
         let policy = RetentionPolicy {
             chat_keep: 10,
@@ -892,7 +950,9 @@ mod tests {
     fn session_value_round_trips() {
         let (_dir, storage) = fresh_storage();
         assert!(storage.get_session_value("missing").unwrap().is_none());
-        storage.set_session_value("ipet:test", "hello,world").unwrap();
+        storage
+            .set_session_value("ipet:test", "hello,world")
+            .unwrap();
         assert_eq!(
             storage.get_session_value("ipet:test").unwrap().as_deref(),
             Some("hello,world")
@@ -956,7 +1016,10 @@ mod tests {
         // And once we save it back, it should now be persisted encrypted.
         enc.save_llm_settings(&loaded).unwrap();
         let raw = enc.get_session_value("llm_settings").unwrap().unwrap();
-        assert!(raw.contains("enc:v1:"), "save did not upgrade to encrypted form");
+        assert!(
+            raw.contains("enc:v1:"),
+            "save did not upgrade to encrypted form"
+        );
         assert!(!raw.contains("sk-legacy"));
     }
 }

@@ -1,0 +1,42 @@
+{
+  "name": "run_project_check",
+  "displayName": "运行项目检查",
+  "description": "在指定项目目录下运行白名单内的构建/测试/检查命令（如 npm test、npm run build、cargo check 等），带超时与输出上限。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["command"],
+    "properties": {
+      "path": {
+        "type": "string",
+        "default": ".",
+        "description": "项目目录路径。"
+      },
+      "command": {
+        "type": "string",
+        "description": "要运行的命令，必须在白名单内：npm test、npm run test、npm run build、npm run lint、npm run check、npm run typecheck、cargo test、cargo check、cargo build、cargo clippy、cargo fmt --check。"
+      },
+      "timeoutSecs": {
+        "type": "integer",
+        "minimum": 5,
+        "maximum": 600,
+        "default": 60,
+        "description": "超时秒数，超时后终止进程。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["process.spawn", "filesystem.read"],
+  "safety": {
+    "readOnly": false,
+    "notes": "执行白名单内的命令并捕获输出；非白名单命令会被拒绝。命令可能修改项目产物（如 build）。"
+  }
+}

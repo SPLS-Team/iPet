@@ -1,0 +1,39 @@
+{
+  "name": "create_note",
+  "displayName": "创建备忘录",
+  "description": "将一段 Markdown 内容写入本地备忘录（~/.ipet/notes/ 下的 .md 文件），可覆盖或追加。属于写操作，受路径沙箱限制。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["title", "content"],
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "备忘录标题，用于生成文件名（slugify）。"
+      },
+      "content": {
+        "type": "string",
+        "description": "Markdown 正文内容，最多 256KB。"
+      },
+      "append": {
+        "type": "boolean",
+        "default": false,
+        "description": "true 时追加到同名文件，false 时覆盖。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["filesystem.write"],
+  "safety": {
+    "readOnly": false,
+    "notes": "只写入 ~/.ipet/notes/ 目录（或 IPET_NOTES_DIR 指定目录），文件名经 slugify 处理，内容有大小上限。"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "function": {
+    "name": "clipboard_read",
+    "description": "读取系统剪贴板中的文本，方便让 iPet 处理刚复制的内容。",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}

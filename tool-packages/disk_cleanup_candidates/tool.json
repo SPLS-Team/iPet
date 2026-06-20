@@ -1,0 +1,33 @@
+{
+  "name": "disk_cleanup_candidates",
+  "displayName": "可清理候选",
+  "description": "扫描临时/缓存目录，按大小列出可清理的文件候选，只读、不删除任何文件。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "maxResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 40,
+        "description": "最多返回多少个候选文件。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["filesystem.read"],
+  "safety": {
+    "readOnly": true,
+    "followsSymlinks": false,
+    "notes": "只列举候选，不删除任何文件；扫描深度受限，跳过小于 64KB 的文件。"
+  }
+}

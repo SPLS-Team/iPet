@@ -3,9 +3,9 @@ use crate::http_safety::{
     validate_url_runtime, HTTP_MAX_REDIRECTS, HTTP_MAX_RESPONSE_BYTES, HTTP_TIMEOUT_SECS,
 };
 use crate::storage::{Storage, ToolConfig};
+use futures_util::StreamExt;
 use ipet_tool_get_system_status::SystemMonitor;
 use ipet_tool_scan_disk::{self as disk_scanner, DiskScanRequest};
-use futures_util::StreamExt;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -102,6 +102,101 @@ impl ToolDispatcher {
                 let json = serde_json::to_string(&result)?;
                 self.storage.cache_disk_scan(&result.root.path, &json)?;
                 Ok(json)
+            }
+            "search_files" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::SearchFilesArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::search_files(args).map_err(AppError::InvalidInput)
+            }
+            "read_text_file" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::ReadTextFileArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::read_text_file(args).map_err(AppError::InvalidInput)
+            }
+            "git_status" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::GitStatusArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::git_status(args).map_err(AppError::InvalidInput)
+            }
+            "list_processes" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::ListProcessesArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::list_processes(args).map_err(AppError::InvalidInput)
+            }
+            "network_status" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::NetworkStatusArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::network_status(args).map_err(AppError::InvalidInput)
+            }
+            "clipboard_read" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::ClipboardReadArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::clipboard_read(args).map_err(AppError::InvalidInput)
+            }
+            "open_path" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::OpenPathArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::open_path(args).map_err(AppError::InvalidInput)
+            }
+            "recent_system_errors" => {
+                let args = serde_json::from_str::<
+                    ipet_tool_desktop_tools::RecentSystemErrorsArgs,
+                >(arguments)
+                .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::recent_system_errors(args)
+                    .map_err(AppError::InvalidInput)
+            }
+            "package_scripts" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::PackageScriptsArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::package_scripts(args).map_err(AppError::InvalidInput)
+            }
+            "run_project_check" => {
+                let args = serde_json::from_str::<
+                    ipet_tool_desktop_tools::RunProjectCheckArgs,
+                >(arguments)
+                .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::run_project_check(args).map_err(AppError::InvalidInput)
+            }
+            "disk_cleanup_candidates" => {
+                let args = serde_json::from_str::<
+                    ipet_tool_desktop_tools::DiskCleanupCandidatesArgs,
+                >(arguments)
+                .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::disk_cleanup_candidates(args)
+                    .map_err(AppError::InvalidInput)
+            }
+            "create_note" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::CreateNoteArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::create_note(args).map_err(AppError::InvalidInput)
+            }
+            "weather_lookup" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::WeatherLookupArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::weather_lookup(args).map_err(AppError::InvalidInput)
+            }
+            "web_search" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::WebSearchArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::web_search(args).map_err(AppError::InvalidInput)
+            }
+            "screenshot_ocr" => {
+                let args =
+                    serde_json::from_str::<ipet_tool_desktop_tools::ScreenshotOcrArgs>(arguments)
+                        .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                ipet_tool_desktop_tools::screenshot_ocr(args).map_err(AppError::InvalidInput)
             }
             other => Err(AppError::InvalidInput(format!("未知内置工具: {other}"))),
         }
@@ -366,7 +461,10 @@ mod tests {
     /// tool script.
     fn echo_command() -> (String, Vec<String>) {
         if cfg!(target_os = "windows") {
-            ("cmd".to_string(), vec!["/C".to_string(), "echo ok".to_string()])
+            (
+                "cmd".to_string(),
+                vec!["/C".to_string(), "echo ok".to_string()],
+            )
         } else {
             ("printf".to_string(), vec!["ok".to_string()])
         }
@@ -399,7 +497,10 @@ mod tests {
             .expect("local dispatch succeeds");
         // The tool prints "ok" (plus a trailing newline on Windows). We only
         // care that stdout made it back.
-        assert!(out.contains("ok"), "expected stdout containing 'ok', got: {out}");
+        assert!(
+            out.contains("ok"),
+            "expected stdout containing 'ok', got: {out}"
+        );
     }
 
     #[tokio::test]

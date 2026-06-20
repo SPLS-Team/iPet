@@ -15,6 +15,7 @@ tauri-build = { version = "2.6.2", features = [] }
 [dependencies]
 ipet-tool-scan-disk = { workspace = true }
 ipet-tool-get-system-status = { workspace = true }
+ipet-tool-desktop-tools = { workspace = true }
 base64 = "0.22.1"
 chacha20poly1305 = "0.10.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }

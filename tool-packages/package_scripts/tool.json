@@ -1,0 +1,30 @@
+{
+  "name": "package_scripts",
+  "displayName": "项目脚本",
+  "description": "读取指定项目目录下 package.json 的 scripts，辅助选择构建/测试/检查命令。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "default": ".",
+        "description": "包含 package.json 的项目目录路径。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["filesystem.read"],
+  "safety": {
+    "readOnly": true,
+    "notes": "仅读取 package.json 的 scripts 字段，不执行任何脚本。"
+  }
+}

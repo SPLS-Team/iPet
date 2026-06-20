@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "function": {
+    "name": "package_scripts",
+    "description": "读取指定项目目录下 package.json 的 scripts，辅助选择构建/测试/检查命令。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": ".",
+          "description": "包含 package.json 的项目目录路径。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

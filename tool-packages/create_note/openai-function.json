@@ -1,0 +1,30 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_note",
+    "description": "将一段 Markdown 内容写入本地备忘录（~/.ipet/notes/ 下的 .md 文件），可覆盖或追加。属于写操作，受路径沙箱限制。",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "title",
+        "content"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "备忘录标题，用于生成文件名（slugify）。"
+        },
+        "content": {
+          "type": "string",
+          "description": "Markdown 正文内容，最多 256KB。"
+        },
+        "append": {
+          "type": "boolean",
+          "default": false,
+          "description": "true 时追加到同名文件，false 时覆盖。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

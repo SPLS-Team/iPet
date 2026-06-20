@@ -1,0 +1,47 @@
+{
+  "name": "network_status",
+  "displayName": "网络状态",
+  "description": "检查 DNS 解析、TCP 连通性，并可返回本机网络接口摘要。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "dnsHost": {
+        "type": "string",
+        "default": "example.com",
+        "description": "用于 DNS 解析测试的域名。"
+      },
+      "tcpTarget": {
+        "type": "string",
+        "default": "1.1.1.1:53",
+        "description": "用于 TCP 连通性测试的 host:port。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 5000,
+        "default": 1200,
+        "description": "TCP 连接超时毫秒数。"
+      },
+      "includeInterfaces": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否返回本机网络接口摘要。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["network", "system.network.read", "process.spawn"],
+  "safety": {
+    "readOnly": true,
+    "notes": "执行 DNS/TCP 检测和固定系统网络信息读取命令，不修改网络配置。"
+  }
+}

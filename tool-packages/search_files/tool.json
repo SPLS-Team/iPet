@@ -1,0 +1,64 @@
+{
+  "name": "search_files",
+  "displayName": "文件搜索",
+  "description": "在指定目录按文件名、路径或可选文件内容搜索，返回匹配文件和片段。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "required": ["path", "query"],
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "要搜索的本地目录路径。"
+      },
+      "query": {
+        "type": "string",
+        "description": "搜索关键词。"
+      },
+      "searchContent": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否读取小文本文件内容进行搜索。"
+      },
+      "includeHidden": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否包含以点开头的隐藏文件/目录。"
+      },
+      "maxResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 30,
+        "description": "最多返回多少条匹配。"
+      },
+      "maxFileBytes": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 1048576,
+        "default": 262144,
+        "description": "内容搜索时单文件最大读取字节数。"
+      },
+      "fileExtensions": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "可选扩展名过滤，例如 [\"rs\", \"js\", \"md\"]。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["filesystem.read"],
+  "safety": {
+    "readOnly": true,
+    "followsSymlinks": false,
+    "notes": "限制扫描数量、返回数量和单文件内容读取大小。"
+  }
+}

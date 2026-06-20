@@ -1,0 +1,37 @@
+{
+  "name": "screenshot_ocr",
+  "displayName": "截屏识别",
+  "description": "截取主屏幕并通过 tesseract 做 OCR 返回文本。需要系统已安装 tesseract；隐私风险较高，调用前应明确确认。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "default": "eng",
+        "description": "tesseract 语言代码，例如 eng、chi_sim。"
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100000,
+        "default": 20000,
+        "description": "最多返回多少字符的识别文本。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["screen.capture", "process.spawn"],
+  "safety": {
+    "readOnly": false,
+    "notes": "截取屏幕并调用 tesseract 识别；会捕获屏幕全部内容，隐私风险高，且依赖系统已安装 tesseract 与对应语言包，缺失时返回错误。"
+  }
+}

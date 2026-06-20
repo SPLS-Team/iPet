@@ -1,0 +1,39 @@
+{
+  "name": "recent_system_errors",
+  "displayName": "近期系统错误",
+  "description": "读取近期系统错误/严重事件日志摘要（Windows 事件日志、macOS unified log、Linux journalctl），用于排查系统问题。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "tool-packages/desktop_tools/rust"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 20,
+        "description": "最多返回多少条事件。"
+      },
+      "sinceHours": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 168,
+        "default": 24,
+        "description": "查询最近多少小时内的错误。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["system.log.read", "process.spawn"],
+  "safety": {
+    "readOnly": true,
+    "notes": "只读取系统错误日志，不修改任何配置。"
+  }
+}

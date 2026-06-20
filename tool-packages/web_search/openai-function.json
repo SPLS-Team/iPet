@@ -1,0 +1,27 @@
+{
+  "type": "function",
+  "function": {
+    "name": "web_search",
+    "description": "用免 Key 的 DuckDuckGo Instant Answer 接口搜索，返回摘要与相关链接。注意：仅返回摘要/百科类结果，非完整网页搜索。",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "搜索关键词。"
+        },
+        "maxResults": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 8,
+          "description": "最多返回多少条结果。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

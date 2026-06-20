@@ -1,0 +1,20 @@
+{
+  "type": "function",
+  "function": {
+    "name": "open_path",
+    "description": "用系统默认方式打开本地文件、目录或 http/https 网址。属于有副作用的操作，调用前应确认目标可信。",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "要打开的本地路径或 http/https 网址。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
