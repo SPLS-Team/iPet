@@ -200,27 +200,56 @@
 }
 
 /* Session switcher — lives on the right of the talk header. A compact native
-   <select> (small, accessible, no custom dropdown machinery) + a "+" button. */
+   <select> (small, accessible, no custom dropdown machinery) + a "+" button.
+   The select is restyled as a pill that reads like a segmented control next to
+   the icon buttons; the native arrow is replaced with a custom chevron so the
+   look is consistent across platforms (the OS menu itself stays native). */
 .session-switcher {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
   flex: 0 0 auto;
+  padding: 3px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
 }
 .session-select {
-  max-width: 180px;
+  /* appearance:none lets us draw the pill + chevron ourselves; the dropdown
+     list itself is still the native OS menu. */
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 170px;
+  height: 26px;
   font-size: 12px;
-  padding: 4px 8px;
+  font-weight: 600;
+  padding: 0 26px 0 12px;
   border-radius: var(--radius-control);
-  border: 1px solid var(--color-hairline-on-glass);
-  background: var(--color-surface-strong);
+  border: 1px solid transparent;
+  background-color: var(--color-surface-strong);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23515154' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   color: var(--color-text);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color var(--duration-fast) var(--ease-spring),
+    background-color var(--duration-fast) var(--ease-spring);
+}
+.session-select:hover {
+  border-color: var(--color-hairline-on-glass);
 }
 .session-select:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+/* Dark mode: the chevron SVG is hard-coded mid-gray; switch to a lighter one. */
+:root[data-theme="dark"] .session-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d2d2d7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
 }
 .session-new {
   flex: 0 0 auto;
@@ -229,21 +258,22 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  border: 1px solid var(--color-hairline-on-glass);
+  border: 1px solid transparent;
   background: var(--color-surface-strong);
   color: var(--color-text-secondary);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-spring),
+    color var(--duration-fast) var(--ease-spring);
 }
 .session-new:hover {
   background: var(--color-accent);
   color: #fff;
-  border-color: transparent;
 }
 
-/* Compact icon buttons (rename / delete current session) — square, borderless,
-   same hit area as the round + button. */
+/* Compact icon buttons (rename / delete current session) — sit inside the
+   switcher pill, so they're borderless and only gain a fill on hover. */
 .session-icon-btn {
   flex: 0 0 auto;
   width: 26px;

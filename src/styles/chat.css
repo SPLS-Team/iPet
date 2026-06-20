@@ -22,17 +22,48 @@
 .message-list {
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  /* Vertical scroll only: clip horizontal overflow so long code lines / URLs
+     never produce a left-right scrollbar at the bottom of the chat. The
+     message bubbles themselves wrap (overflow-wrap:anywhere) and their <pre>
+     blocks scroll internally, so nothing is lost — the page just stops
+     shifting sideways. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 3px 2px 8px;
+  gap: 10px;
+  padding: 6px 2px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hairline) transparent;
+}
+/* WebKit: a slim, unobtrusive scrollbar (no bottom/side gutter when idle). */
+.message-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.message-list::-webkit-scrollbar-thumb {
+  background: var(--color-hairline);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.message-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+  background-clip: content-box;
+}
+/* Hide the horizontal scrollbar gutter entirely on WebKit. */
+.message-list::-webkit-scrollbar:horizontal {
+  display: none;
 }
 
 .message-row {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   animation: fade-in-up 320ms var(--ease-spring) both;
 }
