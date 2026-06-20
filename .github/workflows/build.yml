@@ -5,15 +5,19 @@ name: Build and Release
 # `tauri build` only emits the targets relevant to its runner, so listing both
 # `nsis` and `dmg` in tauri.conf.json is harmless per-platform.
 #
-# - Push to master/dev/PR: build + test gate (no release).
-# - Push a v* tag: build + test gate, then auto-publish a Release with the
+# Triggers (deliberately minimal to avoid duplicate runs):
+# - Pull request against master/dev → build + test gate (merge gate, no release).
+# - Push a v* tag → build + test gate, then auto-publish a Release with the
 #   NSIS installer + portable zip (Windows) and DMG (macOS) attached.
+# - Manual dispatch (workflow_dispatch) → build + test gate.
+#
+# We do NOT trigger on plain pushes to master/dev. A merged PR already ran the
+# same build as the merge gate, so re-running on the post-merge push would be a
+# duplicate. The only push event that fires is a `v*` tag (for releases). If you
+# ever want a fresh build of master without a PR, use workflow_dispatch.
 
 on:
   push:
-    branches:
-      - master
-      - dev
     tags:
       - 'v*'
   pull_request:
