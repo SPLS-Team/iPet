@@ -116,6 +116,7 @@
 .app-shell[data-view="control"] {
   grid-template-rows:
     var(--platform-titlebar-height)
+    auto
     minmax(0, 1fr);
 }
 
@@ -196,6 +197,49 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Session switcher — lives on the right of the talk header. A compact native
+   <select> (small, accessible, no custom dropdown machinery) + a "+" button. */
+.session-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.session-select {
+  max-width: 180px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.session-select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.session-new {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-hairline-on-glass);
+  background: var(--color-surface-strong);
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.session-new:hover {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
 }
 
 /* Chrome activity summary (sits between brand and window controls). */
@@ -336,7 +380,7 @@
 /* Wide Control Center: sidebar + detail (ref-plan §5.3). */
 @media (min-width: 720px) {
   .app-shell[data-view="control"] {
-    grid-template-columns: 184px 1fr;
+    grid-template-columns: 196px 1fr;
     grid-template-rows: var(--platform-titlebar-height) minmax(0, 1fr);
   }
   .app-shell[data-view="control"] .titlebar {
@@ -355,7 +399,8 @@
   }
   .control-nav-item {
     justify-content: flex-start;
-    height: 36px;
+    height: 40px;
+    padding: 0 11px;
   }
   .control-panel {
     grid-column: 2;
@@ -613,4 +658,3 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-

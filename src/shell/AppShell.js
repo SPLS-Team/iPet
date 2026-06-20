@@ -1,6 +1,6 @@
 import { renderWindowChrome, bindWindowChrome } from "./WindowChrome.js";
 import { renderCompanionCapsule, capsuleStatusText } from "./CompanionCapsule.js";
-import { renderTalkWorkspace } from "./TalkWorkspace.js";
+import { renderTalkWorkspace, bindTalkWorkspace } from "./TalkWorkspace.js";
 import { renderControlCenter, bindControlCenter } from "./ControlCenter.js";
 
 /**
@@ -44,6 +44,7 @@ export function renderAppShell(root, ctx) {
 
   if (view !== "capsule") bindWindowChrome(ctx);
   if (view === "capsule") bindCapsule(ctx);
+  if (view === "talk") bindTalkWorkspace(ctx);
   if (view === "control") bindControlCenter(ctx);
 }
 

@@ -1,9 +1,12 @@
 import { icon } from "../ui/icons.js";
+import { escapeHtml } from "../utils/markdown.js";
 import { renderModelView } from "../views/ModelView.js";
+import { renderPersonaView } from "../views/PersonaView.js";
 import { renderToolsView } from "../views/ToolsView.js";
 import { renderUsageView } from "../views/UsageView.js";
 import { renderSystemView } from "../views/SystemView.js";
 import { renderAppearanceView } from "../views/AppearanceView.js";
+import { renderMemoryView } from "../views/MemoryView.js";
 
 /**
  * ControlCenter — the management surface (ref-plan §3.3, §5.3, §6). Navigation
@@ -14,9 +17,11 @@ import { renderAppearanceView } from "../views/AppearanceView.js";
 
 const SECTIONS = [
   { id: "model", label: "模型", icon: "model" },
+  { id: "persona", label: "人设", icon: "persona" },
   { id: "tools", label: "工具", icon: "tools" },
   { id: "usage", label: "用量", icon: "stats" },
   { id: "system", label: "系统", icon: "settings" },
+  { id: "memory", label: "记忆", icon: "bookmark" },
   { id: "appearance", label: "外观", icon: "eyeOff" },
 ];
 
@@ -33,7 +38,8 @@ export function bindControlCenter(ctx) {
   if (nav) {
     nav.innerHTML = SECTIONS.map((s) => {
       const active = state.controlSection === s.id;
-      return `<button class="control-nav-item ${active ? "active" : ""}" type="button" role="tab" aria-selected="${active ? "true" : "false"}" tabindex="${active ? "0" : "-1"}" data-control-section="${s.id}">${icon(s.icon)}<span>${s.label}</span></button>`;
+      const label = escapeHtml(s.label);
+      return `<button class="control-nav-item ${active ? "active" : ""}" type="button" role="tab" aria-selected="${active ? "true" : "false"}" tabindex="${active ? "0" : "-1"}" title="${label}" aria-label="${label}" data-control-section="${s.id}">${icon(s.icon)}<span>${label}</span></button>`;
     }).join("");
     const buttons = Array.from(nav.querySelectorAll("[data-control-section]"));
     buttons.forEach((button) => {
@@ -41,11 +47,14 @@ export function bindControlCenter(ctx) {
     });
     // Arrow-key section switching (ref-plan §15.6 — keyboard-accessible nav).
     nav.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const keys = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"];
+      if (!keys.includes(event.key)) return;
       event.preventDefault();
-      const idx = buttons.findIndex((b) => b.dataset.controlSection === state.controlSection);
+      const idx = Math.max(0, buttons.findIndex((b) => b.dataset.controlSection === state.controlSection));
       const dir = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1;
-      const next = buttons[(idx + dir + buttons.length) % buttons.length];
+      let next = buttons[(idx + dir + buttons.length) % buttons.length];
+      if (event.key === "Home") next = buttons[0];
+      if (event.key === "End") next = buttons[buttons.length - 1];
       handlers.onControlSection(next.dataset.controlSection);
       // Focus the newly-active tab after re-render.
       window.requestAnimationFrame(() => {
@@ -59,9 +68,11 @@ export function bindControlCenter(ctx) {
   const panel = document.querySelector("#panel");
   if (!panel) return;
   const section = state.controlSection;
-  if (section === "tools") renderToolsView(panel, state, handlers);
+  if (section === "persona") renderPersonaView(panel, state, handlers);
+  else if (section === "tools") renderToolsView(panel, state, handlers);
   else if (section === "usage") renderUsageView(panel, state, handlers);
   else if (section === "system") renderSystemView(panel, state, handlers);
+  else if (section === "memory") renderMemoryView(panel, state, handlers);
   else if (section === "appearance") renderAppearanceView(panel, state, handlers);
   else renderModelView(panel, state, handlers);
 }

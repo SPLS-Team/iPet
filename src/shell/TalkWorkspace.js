@@ -20,7 +20,32 @@ export function renderTalkWorkspace(ctx) {
         <strong>iPet</strong>
         <span class="talk-state" data-role="talk-state" aria-live="polite">${escapeHtml(talkActivityText(state))}</span>
       </div>
+      <div class="session-switcher" role="group" aria-label="会话">
+        <select class="session-select" data-role="session-select" title="切换会话" aria-label="切换会话">
+          ${(state.sessions ?? [])
+            .map(
+              (s) =>
+                `<option value="${s.id}" ${s.id === state.currentSessionId ? "selected" : ""}>${escapeHtml(s.title)}</option>`,
+            )
+            .join("")}
+        </select>
+        <button class="session-new" type="button" data-role="session-new" title="新建会话" aria-label="新建会话">+</button>
+      </div>
     </section>
     <section id="panel" class="panel" data-role="talk-panel"></section>
   `;
+}
+
+export function bindTalkWorkspace(ctx) {
+  const { state, handlers } = ctx;
+  const select = document.querySelector('[data-role="session-select"]');
+  if (select) {
+    select.addEventListener("change", () => {
+      handlers.onSwitchSession?.(Number(select.value));
+    });
+  }
+  const newBtn = document.querySelector('[data-role="session-new"]');
+  if (newBtn) {
+    newBtn.addEventListener("click", () => handlers.onNewSession?.());
+  }
 }

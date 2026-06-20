@@ -58,12 +58,28 @@ describe("AppShell view dispatch", () => {
     expect(root.querySelector(".app-shell").dataset.view).toBe("talk");
   });
 
+  it("renders a session switcher in the talk header with one option per session", () => {
+    const { ctx } = makeCtx("talk");
+    ctx.state.sessions = [
+      { id: 1, title: "First" },
+      { id: 2, title: "Second" },
+    ];
+    ctx.state.currentSessionId = 2;
+    renderAppShell(root, ctx);
+    const select = root.querySelector('[data-role="session-select"]');
+    expect(select).toBeTruthy();
+    expect(select.querySelectorAll("option").length).toBe(2);
+    expect(select.querySelector('option[value="2"]')?.hasAttribute("selected")).toBe(true);
+    expect(root.querySelector('[data-role="session-new"]')).toBeTruthy();
+  });
+
   it("renders capsule without titlebar and places the pet", () => {
     const { ctx, petRoot } = makeCtx("capsule");
     renderAppShell(root, ctx);
     expect(root.querySelector(".titlebar")).toBeNull();
     expect(root.querySelector("[data-capsule]")).toBeTruthy();
     expect(root.querySelector(".app-shell").classList.contains("compact")).toBe(true);
+    expect(root.querySelector(".pet-body")?.getAttribute("aria-label")).toBe("展开 iPet");
     // The persistent pet node should have been moved into the capsule slot.
     expect(petRoot.parentElement).toBeTruthy();
     expect(petRoot.closest("[data-capsule]")).toBeTruthy();
@@ -77,6 +93,19 @@ describe("AppShell view dispatch", () => {
     expect(root.querySelector(".app-shell").dataset.view).toBe("control");
   });
 
+  it("labels control tabs independently of their visible text", () => {
+    const { ctx } = makeCtx("control");
+    renderAppShell(root, ctx);
+    const buttons = Array.from(root.querySelectorAll(".control-nav-item"));
+    expect(buttons.length).toBe(7);
+    buttons.forEach((button) => {
+      const label = button.textContent.trim();
+      expect(button.getAttribute("aria-label")).toBe(label);
+      expect(button.getAttribute("title")).toBe(label);
+      expect(button.querySelector(".icon")?.getAttribute("aria-hidden")).toBe("true");
+    });
+  });
+
   it("detaches the pet when the view has no pet slot (talk/control)", () => {
     const { ctx, petRoot } = makeCtx("talk");
     renderAppShell(root, ctx);
@@ -84,12 +113,13 @@ describe("AppShell view dispatch", () => {
   });
 
   it("renders every Control Center section without throwing", () => {
-    const sections = ["model", "tools", "usage", "system", "appearance"];
+    const sections = ["model", "persona", "tools", "usage", "system", "memory", "appearance"];
     for (const section of sections) {
       const { ctx } = makeCtx("control");
       ctx.state.controlSection = section;
       ctx.state.tools = [];
       ctx.state.stats = null;
+      ctx.state.memories = [];
       ctx.state.settingsDraft = {
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-4.1-mini",
@@ -102,6 +132,8 @@ describe("AppShell view dispatch", () => {
       ctx.state.handlers = {
         ...ctx.handlers,
         onSaveSettings: () => {},
+        onSavePersona: () => {},
+        onDismissPersonaGuide: () => {},
         onToggleTop: () => {},
         onTemporaryPassthrough: () => {},
         onGoCapsule: () => {},
@@ -127,7 +159,7 @@ describe("AppShell view dispatch", () => {
     const { ctx } = makeCtx("control");
     ctx.state.controlSection = "model";
     ctx.state.settingsDraft = { baseUrl: "https://x", model: "m", temperature: 0.7, maxContextMessages: 18, systemPrompt: "", autoSystemCheckEnabled: false, autoSystemCheckIntervalMinutes: 10 };
-    ctx.state.handlers = { ...ctx.handlers, onSaveSettings: () => {}, onToggleTop: () => {}, onTemporaryPassthrough: () => {}, onGoCapsule: () => {}, onRunSystemCheck: () => {}, onSetTheme: () => {}, onSetPlatformStyle: () => {}, onSetDensity: () => {}, onSetReduceMotion: () => {}, onRefreshStats: () => {}, onSetToolEnabled: () => {}, onDeleteTool: () => {}, onSaveTool: () => {}, onImportTool: () => {}, onSetComposerMode: () => {} };
+    ctx.state.handlers = { ...ctx.handlers, onSaveSettings: () => {}, onSavePersona: () => {}, onDismissPersonaGuide: () => {}, onToggleTop: () => {}, onTemporaryPassthrough: () => {}, onGoCapsule: () => {}, onRunSystemCheck: () => {}, onSetTheme: () => {}, onSetPlatformStyle: () => {}, onSetDensity: () => {}, onSetReduceMotion: () => {}, onRefreshStats: () => {}, onSetToolEnabled: () => {}, onDeleteTool: () => {}, onSaveTool: () => {}, onImportTool: () => {}, onSetComposerMode: () => {} };
     renderAppShell(root, ctx);
     const panel = root.querySelector("#panel");
     expect(panel.classList.contains("control-panel")).toBe(true);

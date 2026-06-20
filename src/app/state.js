@@ -6,8 +6,19 @@ export const state = {
   // source of truth for which shell is on screen; `compactMode` is kept in
   // sync as the boolean the Tauri window command + legacy `.compact` CSS expect.
   viewMode: "talk", // "capsule" | "talk" | "control"
-  controlSection: "model", // "model" | "tools" | "usage" | "system" | "appearance"
+  controlSection: "model", // "model" | "persona" | "tools" | "usage" | "system" | "appearance" | "memory"
   messages: [],
+  // Multi-session chat (ref-plan §sessions). `currentSessionId` is mirrored
+  // from the backend; switching sessions reloads messages from that session.
+  sessions: [],
+  currentSessionId: null,
+  sessionsLoading: false,
+  // Long-term memory (ref-plan §memory). `memories` backs the management view;
+  // the model reads/writes them via the memory_save / memory_search tools and
+  // gets a recent slice injected into its system prompt each turn (backend).
+  memories: [],
+  memoriesLoading: false,
+  memoryStatus: "",
   settings: null,
   settingsDraft: null,
   settingsStatus: "",
@@ -33,6 +44,7 @@ export const state = {
   toast: null,
   toastTimer: null,
   dialog: null,
+  personaOnboardingVisible: false,
   toolComposerMode: "import",
   theme: "system",
   settingsFieldErrors: {},

@@ -6,7 +6,10 @@ import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
 import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
 import { renderAppShell, capsuleStatusText } from "./shell/AppShell.js";
 import { talkActivityText } from "./shell/WindowChrome.js";
+import { escapeHtml } from "./utils/markdown.js";
 import "./styles.css";
+
+const PERSONA_ONBOARDING_KEY = "ipet.personaOnboarding.v1";
 
 const { renderOverlay, confirmDialog, closeDialog, showToast } = createOverlayController(state);
 
@@ -29,6 +32,8 @@ const ctx = {
     onControlSection: setControlSection,
     onRunSystemCheck: () => runAutoSystemCheck({ force: true }),
     onSaveSettings: saveSettings,
+    onSavePersona: savePersonaSettings,
+    onDismissPersonaGuide: dismissPersonaGuide,
     onToggleTop: toggleAlwaysOnTop,
     onTemporaryPassthrough: enableTemporaryPassthrough,
     onSetToolEnabled: setToolEnabled,
@@ -44,6 +49,11 @@ const ctx = {
     onSend: sendMessage,
     onStop: stopChat,
     onGoSettings: (section) => setControlSection(section === "stats" ? "usage" : section),
+    onRefreshMemories: loadMemoriesSafely,
+    onEditMemory: requestEditMemory,
+    onDeleteMemory: requestDeleteMemory,
+    onSwitchSession: switchSession,
+    onNewSession: () => createSession(null),
   },
 };
 
@@ -60,6 +70,7 @@ async function bootstrap() {
   await loadTheme({ state, invoke });
   await bindChatEvents();
   await loadInitialData();
+  await maybeOpenPersonaOnboarding();
   render();
   scheduleAutoSystemCheck({ runNow: true });
 }
@@ -134,7 +145,13 @@ async function bindChatEvents() {
 }
 
 async function loadInitialData() {
-  await Promise.allSettled([loadSettings(), loadMessages(), loadTools(), loadStats()]);
+  await Promise.allSettled([
+    loadSettings(),
+    loadSessions(),
+    loadMessages(),
+    loadTools(),
+    loadStats(),
+  ]);
 }
 
 async function loadSettings() {
@@ -158,6 +175,81 @@ async function loadMessages() {
     role: record.role,
     content: record.content,
   }));
+}
+
+// --- sessions -------------------------------------------------------------
+// The backend owns the active session id (AppState::current_session_id) so
+// restarts and cross-window writes stay consistent. loadSessions reconciles
+// the frontend mirror; switchSession persists the choice and reloads messages.
+
+async function loadSessions() {
+  state.sessionsLoading = true;
+  try {
+    state.sessions = await invoke("list_sessions");
+    const current = await invoke("get_current_session");
+    state.currentSessionId = current;
+  } catch (error) {
+    state.toast = { type: "error", message: String(error) };
+  } finally {
+    state.sessionsLoading = false;
+  }
+}
+
+async function createSession(title) {
+  const session = await invoke("create_session", { title: title || null });
+  state.sessions = [session, ...state.sessions];
+  await switchSession(session.id);
+}
+
+async function switchSession(id) {
+  if (id === state.currentSessionId) return;
+  await invoke("set_current_session", { id });
+  state.currentSessionId = id;
+  await loadMessages();
+}
+
+async function renameSession(id, title) {
+  const updated = await invoke("rename_session", { id, title });
+  if (updated) {
+    state.sessions = state.sessions.map((s) => (s.id === id ? updated : s));
+  }
+}
+
+async function deleteSession(id) {
+  // Backend returns the next active id (it re-seeds if the deleted one was
+  // current), so the UI always has a valid session to show.
+  const nextId = await invoke("delete_session", { id });
+  state.sessions = state.sessions.filter((s) => s.id !== id);
+  if (nextId !== state.currentSessionId) {
+    state.currentSessionId = nextId;
+    await loadMessages();
+  }
+}
+
+// --- memories -------------------------------------------------------------
+
+async function loadMemories() {
+  state.memoriesLoading = true;
+  try {
+    state.memories = await invoke("list_memories");
+  } catch (error) {
+    state.memoryStatus = String(error);
+  } finally {
+    state.memoriesLoading = false;
+  }
+}
+
+async function updateMemory(id, content, category) {
+  const updated = await invoke("update_memory", { id, content, category: category || null });
+  if (updated) {
+    state.memories = state.memories.map((m) => (m.id === id ? updated : m));
+  }
+  return updated;
+}
+
+async function deleteMemory(id) {
+  await invoke("delete_memory", { id });
+  state.memories = state.memories.filter((m) => m.id !== id);
 }
 
 async function loadTools() {
@@ -247,6 +339,38 @@ function toggleControl() {
   setViewMode(state.viewMode === "control" ? "talk" : "control");
 }
 
+async function maybeOpenPersonaOnboarding() {
+  if (hasCompletedPersonaOnboarding()) return;
+  state.personaOnboardingVisible = true;
+  state.controlSection = "persona";
+  state.viewMode = "control";
+  state.compactMode = false;
+  await ensureControlSidebarWidth();
+}
+
+function hasCompletedPersonaOnboarding() {
+  try {
+    return window.localStorage.getItem(PERSONA_ONBOARDING_KEY) === "done";
+  } catch (_error) {
+    return true;
+  }
+}
+
+function completePersonaOnboarding() {
+  state.personaOnboardingVisible = false;
+  try {
+    window.localStorage.setItem(PERSONA_ONBOARDING_KEY, "done");
+  } catch (_error) {
+    // Storage can be unavailable in hardened webviews; the current session still
+    // hides the guide once the user dismisses or saves it.
+  }
+}
+
+function dismissPersonaGuide() {
+  completePersonaOnboarding();
+  render();
+}
+
 async function setControlSection(section) {
   state.controlSection = section;
   if (state.viewMode !== "control") {
@@ -256,6 +380,7 @@ async function setControlSection(section) {
   }
   if (section === "tools") await loadToolsSafely();
   if (section === "usage") await refreshStatsSilently();
+  if (section === "memory") await loadMemoriesSafely();
   render();
 }
 
@@ -263,6 +388,14 @@ async function setControlSection(section) {
 function setToolComposerMode(mode) {
   state.toolComposerMode = mode;
   render();
+}
+
+async function savePersonaSettings(partial) {
+  const saved = await saveSettings(partial);
+  if (saved) {
+    completePersonaOnboarding();
+    render();
+  }
 }
 
 async function sendMessage(content) {
@@ -397,7 +530,7 @@ async function saveSettings(partial = {}) {
     state.settingsFieldErrors = errors;
     showToast("请修正标红的字段", "error");
     render();
-    return;
+    return false;
   }
   state.settingsFieldErrors = {};
 
@@ -430,6 +563,7 @@ async function saveSettings(partial = {}) {
       "autoSystemCheckEnabled" in partial || "autoSystemCheckIntervalMinutes" in partial;
     scheduleAutoSystemCheck({ runNow: autoChanged && state.settings.autoSystemCheckEnabled });
   }
+  return saved;
 }
 
 async function toggleAlwaysOnTop() {
@@ -455,6 +589,78 @@ async function loadToolsSafely() {
   } catch (error) {
     state.toolStatus = String(error);
   }
+}
+
+async function loadMemoriesSafely() {
+  try {
+    await loadMemories();
+  } catch (error) {
+    state.memoryStatus = String(error);
+  }
+}
+
+async function requestDeleteMemory(id, key) {
+  const confirmed = await confirmDialog({
+    title: `删除记忆「${key ?? id}」？`,
+    body: "删除后无法恢复。下次对话起模型将不再记得这条信息。",
+    confirmLabel: "删除",
+    cancelLabel: "取消",
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    await deleteMemory(id);
+    showToast(`已删除记忆「${key ?? id}」`, "success");
+  } catch (error) {
+    state.memoryStatus = String(error);
+    showToast(`删除失败：${String(error)}`, "error");
+  }
+  render();
+}
+
+async function requestEditMemory(id) {
+  const memory = (state.memories ?? []).find((m) => m.id === id);
+  if (!memory) return;
+  // Inline-edit: swap the content <p> for a textarea + save/cancel. Kept
+  // lightweight rather than a full dialog — most edits are small content tweaks.
+  const contentEl = document.querySelector(`[data-role="memory-content-${id}"]`);
+  if (!contentEl) return;
+  const card = contentEl.closest(".memory-card");
+  if (!card || card.dataset.editing === "true") return;
+  card.dataset.editing = "true";
+  const original = memory.content;
+  contentEl.innerHTML = `
+    <textarea class="memory-edit-input" rows="3">${escapeHtml(original)}</textarea>
+    <div class="memory-edit-actions">
+      <input class="memory-edit-category" type="text" value="${escapeHtml(memory.category || "general")}" placeholder="分类" />
+      <button class="text-button primary" type="button" data-memory-save="${id}">保存</button>
+      <button class="text-button" type="button" data-memory-cancel="${id}">取消</button>
+    </div>
+  `;
+  const saveBtn = card.querySelector(`[data-memory-save="${id}"]`);
+  const cancelBtn = card.querySelector(`[data-memory-cancel="${id}"]`);
+  const input = card.querySelector(".memory-edit-input");
+  const categoryInput = card.querySelector(".memory-edit-category");
+  saveBtn?.addEventListener("click", async () => {
+    const content = input.value.trim();
+    if (!content) {
+      showToast("内容不能为空", "error");
+      return;
+    }
+    try {
+      await updateMemory(id, content, categoryInput.value.trim());
+      showToast("记忆已更新", "success");
+    } catch (error) {
+      state.memoryStatus = String(error);
+      showToast(`保存失败：${String(error)}`, "error");
+    }
+    delete card.dataset.editing;
+    render();
+  });
+  cancelBtn?.addEventListener("click", () => {
+    delete card.dataset.editing;
+    render();
+  });
 }
 
 async function setToolEnabled(name, enabled) {
