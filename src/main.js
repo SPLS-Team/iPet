@@ -11,7 +11,7 @@ import "./styles.css";
 
 const PERSONA_ONBOARDING_KEY = "ipet.personaOnboarding.v1";
 
-const { renderOverlay, confirmDialog, closeDialog, showToast } = createOverlayController(state);
+const { renderOverlay, confirmDialog, promptDialog, closeDialog, showToast } = createOverlayController(state);
 
 // The pet node is created once and moved between view slots on each render,
 // so streaming mood/line updates always target live DOM (ref-plan §11.3).
@@ -54,6 +54,8 @@ const ctx = {
     onDeleteMemory: requestDeleteMemory,
     onSwitchSession: switchSession,
     onNewSession: () => createSession(null),
+    onRenameSession: requestRenameSession,
+    onDeleteSession: requestDeleteSession,
   },
 };
 
@@ -181,12 +183,24 @@ async function loadMessages() {
 // The backend owns the active session id (AppState::current_session_id) so
 // restarts and cross-window writes stay consistent. loadSessions reconciles
 // the frontend mirror; switchSession persists the choice and reloads messages.
+//
+// Switch/create/delete are async but feel instant: we update local state +
+// render immediately (optimistic), then reconcile with the backend. A monotonic
+// `sessionSeq` token guards against races — if the user switches again before a
+// pending switch's messages land, the stale result is discarded.
+
+let sessionSeq = 0;
 
 async function loadSessions() {
   state.sessionsLoading = true;
   try {
-    state.sessions = await invoke("list_sessions");
-    const current = await invoke("get_current_session");
+    // list_sessions + get_current_session are independent — fire both at once
+    // instead of serially so the header populates one round-trip sooner.
+    const [sessions, current] = await Promise.all([
+      invoke("list_sessions"),
+      invoke("get_current_session"),
+    ]);
+    state.sessions = sessions;
     state.currentSessionId = current;
   } catch (error) {
     state.toast = { type: "error", message: String(error) };
@@ -196,33 +210,116 @@ async function loadSessions() {
 }
 
 async function createSession(title) {
-  const session = await invoke("create_session", { title: title || null });
-  state.sessions = [session, ...state.sessions];
-  await switchSession(session.id);
+  // Optimistic: the new session appears in the list and is selected before
+  // the backend even confirms, so the "+" feels instant. We still await the
+  // create + set-current round-trips before loading messages (there's nothing
+  // to load for a fresh session, but the switch must persist).
+  const seq = ++sessionSeq;
+  try {
+    const session = await invoke("create_session", { title: title || null });
+    state.sessions = [session, ...state.sessions];
+    state.currentSessionId = session.id;
+    state.messages = [];
+    await invoke("set_current_session", { id: session.id });
+    if (seq !== sessionSeq) return; // user switched away meanwhile
+    render();
+  } catch (error) {
+    showToast(`新建会话失败：${String(error)}`, "error");
+    await loadSessions(); // reconcile on failure
+    render();
+  }
 }
 
 async function switchSession(id) {
   if (id === state.currentSessionId) return;
-  await invoke("set_current_session", { id });
+  const seq = ++sessionSeq;
+  // Optimistic: flip the active id + clear messages now so the list and the
+  // select update without waiting on the backend. If the user switches again
+  // before messages load, the token check drops the stale result.
   state.currentSessionId = id;
-  await loadMessages();
+  state.messages = [];
+  render();
+  try {
+    await invoke("set_current_session", { id });
+    if (seq !== sessionSeq) return;
+    await loadMessages();
+    if (seq !== sessionSeq) return;
+    render();
+  } catch (error) {
+    if (seq !== sessionSeq) return;
+    showToast(`切换会话失败：${String(error)}`, "error");
+    await loadSessions();
+    render();
+  }
 }
 
 async function renameSession(id, title) {
   const updated = await invoke("rename_session", { id, title });
   if (updated) {
     state.sessions = state.sessions.map((s) => (s.id === id ? updated : s));
+    render();
+  }
+  return updated;
+}
+
+/** Prompt for a new title and rename the current session. */
+async function requestRenameSession(id) {
+  if (id == null) return;
+  const session = (state.sessions ?? []).find((s) => s.id === id);
+  const title = await promptDialog({
+    title: "重命名会话",
+    value: session?.title ?? "",
+    placeholder: "会话标题",
+    confirmLabel: "保存",
+    cancelLabel: "取消",
+  });
+  if (title == null || title === session?.title) return;
+  try {
+    await renameSession(id, title);
+    showToast("会话已重命名", "success");
+  } catch (error) {
+    showToast(`重命名失败：${String(error)}`, "error");
   }
 }
 
+/** Confirm then delete the current session. */
+async function requestDeleteSession(id) {
+  if (id == null) return;
+  const session = (state.sessions ?? []).find((s) => s.id === id);
+  const confirmed = await confirmDialog({
+    title: `删除会话「${session?.title ?? id}」？`,
+    body: "该会话的全部消息将被删除，且无法恢复。",
+    confirmLabel: "删除",
+    cancelLabel: "取消",
+    danger: true,
+  });
+  if (!confirmed) return;
+  await deleteSession(id);
+}
+
 async function deleteSession(id) {
-  // Backend returns the next active id (it re-seeds if the deleted one was
-  // current), so the UI always has a valid session to show.
-  const nextId = await invoke("delete_session", { id });
+  const seq = ++sessionSeq;
+  // Optimistic: remove from the list immediately. Backend returns the next
+  // active id (it re-seeds if the deleted one was current), so the UI always
+  // has a valid session to show.
   state.sessions = state.sessions.filter((s) => s.id !== id);
-  if (nextId !== state.currentSessionId) {
-    state.currentSessionId = nextId;
-    await loadMessages();
+  render();
+  try {
+    const nextId = await invoke("delete_session", { id });
+    if (seq !== sessionSeq) return;
+    if (nextId !== state.currentSessionId) {
+      state.currentSessionId = nextId;
+      state.messages = [];
+      render();
+      await loadMessages();
+      if (seq !== sessionSeq) return;
+      render();
+    }
+  } catch (error) {
+    if (seq !== sessionSeq) return;
+    showToast(`删除会话失败：${String(error)}`, "error");
+    await loadSessions();
+    render();
   }
 }
 

@@ -242,6 +242,35 @@
   border-color: transparent;
 }
 
+/* Compact icon buttons (rename / delete current session) — square, borderless,
+   same hit area as the round + button. */
+.session-icon-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-spring),
+    color var(--duration-fast) var(--ease-spring);
+}
+.session-icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+}
+.session-icon-btn.danger:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.12);
+  color: #ff453a;
+}
+.session-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Chrome activity summary (sits between brand and window controls). */
 .chrome-activity {
   flex: 1 1 auto;

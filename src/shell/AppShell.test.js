@@ -73,6 +73,24 @@ describe("AppShell view dispatch", () => {
     expect(root.querySelector('[data-role="session-new"]')).toBeTruthy();
   });
 
+  it("disables rename/delete session buttons when no session is active", () => {
+    const { ctx } = makeCtx("talk");
+    ctx.state.sessions = [];
+    ctx.state.currentSessionId = null;
+    renderAppShell(root, ctx);
+    expect(root.querySelector('[data-role="session-rename"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-role="session-delete"]')?.disabled).toBe(true);
+  });
+
+  it("enables rename/delete session buttons when a session is active", () => {
+    const { ctx } = makeCtx("talk");
+    ctx.state.sessions = [{ id: 5, title: "Active" }];
+    ctx.state.currentSessionId = 5;
+    renderAppShell(root, ctx);
+    expect(root.querySelector('[data-role="session-rename"]')?.disabled).toBeFalsy();
+    expect(root.querySelector('[data-role="session-delete"]')?.disabled).toBeFalsy();
+  });
+
   it("renders capsule without titlebar and places the pet", () => {
     const { ctx, petRoot } = makeCtx("capsule");
     renderAppShell(root, ctx);

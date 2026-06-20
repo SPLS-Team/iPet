@@ -47,7 +47,7 @@
   color: var(--color-text);
   font-size: var(--text-subtitle);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .dialog-body {
@@ -61,6 +61,23 @@
 .dialog-body code {
   font-family: var(--font-mono);
   font-size: var(--text-code);
+}
+
+.dialog-input {
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--text-body);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-hairline);
+  background: var(--color-canvas);
+  color: var(--color-text);
+}
+.dialog-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft, rgba(0, 113, 227, 0.15));
 }
 
 .dialog-actions {
@@ -96,4 +113,3 @@
   border-color: rgba(215, 0, 21, 0.34);
   color: var(--color-danger);
 }
-

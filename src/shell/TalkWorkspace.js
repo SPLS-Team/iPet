@@ -1,4 +1,5 @@
 import { escapeHtml } from "../utils/markdown.js";
+import { icon } from "../ui/icons.js";
 import { talkActivityText } from "./WindowChrome.js";
 
 /**
@@ -27,8 +28,10 @@ export function renderTalkWorkspace(ctx) {
               (s) =>
                 `<option value="${s.id}" ${s.id === state.currentSessionId ? "selected" : ""}>${escapeHtml(s.title)}</option>`,
             )
-            .join("")}
+            .join("") || '<option value="" disabled>暂无会话</option>'}
         </select>
+        <button class="session-icon-btn" type="button" data-role="session-rename" title="重命名当前会话" aria-label="重命名当前会话" ${state.currentSessionId == null ? "disabled" : ""}>${icon("edit", { size: 14 })}</button>
+        <button class="session-icon-btn danger" type="button" data-role="session-delete" title="删除当前会话" aria-label="删除当前会话" ${state.currentSessionId == null ? "disabled" : ""}>${icon("trash", { size: 14 })}</button>
         <button class="session-new" type="button" data-role="session-new" title="新建会话" aria-label="新建会话">+</button>
       </div>
     </section>
@@ -41,11 +44,16 @@ export function bindTalkWorkspace(ctx) {
   const select = document.querySelector('[data-role="session-select"]');
   if (select) {
     select.addEventListener("change", () => {
-      handlers.onSwitchSession?.(Number(select.value));
+      const value = select.value;
+      if (value === "") return; // placeholder option
+      handlers.onSwitchSession?.(Number(value));
     });
   }
-  const newBtn = document.querySelector('[data-role="session-new"]');
-  if (newBtn) {
-    newBtn.addEventListener("click", () => handlers.onNewSession?.());
-  }
+  const wire = (role, fn) => {
+    const btn = document.querySelector(`[data-role="${role}"]`);
+    if (btn && !btn.disabled) btn.addEventListener("click", fn);
+  };
+  wire("session-new", () => handlers.onNewSession?.());
+  wire("session-rename", () => handlers.onRenameSession?.(state.currentSessionId));
+  wire("session-delete", () => handlers.onDeleteSession?.(state.currentSessionId));
 }
