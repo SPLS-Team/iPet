@@ -26,6 +26,7 @@ export function renderWindowChrome(ctx) {
       <div class="chrome-activity" data-role="chrome-activity" aria-live="polite">${escapeHtml(state_)}</div>
       <div class="window-actions">
         <button class="window-button" data-chrome="control" title="${inControl ? "返回对话" : "控制中心"}" aria-label="${inControl ? "返回对话" : "控制中心"}">${icon(inControl ? "compact" : "settings", { label: inControl ? "返回对话" : "控制中心" })}</button>
+        <button class="window-button ${state.alwaysOnTop ? "active" : ""}" data-chrome="pin" title="${state.alwaysOnTop ? "取消置顶" : "窗口置顶"}" aria-label="${state.alwaysOnTop ? "取消置顶" : "窗口置顶"}" aria-pressed="${state.alwaysOnTop ? "true" : "false"}">${icon("pin", { label: state.alwaysOnTop ? "取消置顶" : "窗口置顶" })}</button>
         <button class="window-button" data-chrome="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
         <button class="window-button" data-chrome="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
         <button class="window-button danger" data-chrome="close" title="关闭" aria-label="关闭">${icon("close", { label: "关闭" })}</button>
@@ -49,6 +50,7 @@ export function bindWindowChrome(ctx) {
     button.addEventListener("click", () => {
       const action = button.dataset.chrome;
       if (action === "control") handlers.onToggleControl();
+      else if (action === "pin") handlers.onToggleTop?.();
       else if (action === "compact") handlers.onCompact();
       else if (action === "minimize") handlers.onMinimize();
       else if (action === "close") handlers.onClose();

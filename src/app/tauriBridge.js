@@ -59,6 +59,8 @@ async function mockInvoke(command, args) {
       maxContextMessages: 18,
       autoSystemCheckEnabled: false,
       autoSystemCheckIntervalMinutes: 10,
+      notifyOnReply: false,
+      notifyOnSystemAlert: false,
       systemPrompt:
         "你是 iPet，一个常驻桌面的轻量助手。回答要简洁，必要时主动使用本地工具查看系统状态或分析目录占用。",
       settingsPath: "Browser preview mock",
@@ -73,6 +75,8 @@ async function mockInvoke(command, args) {
       maxContextMessages: args.input?.maxContextMessages,
       autoSystemCheckEnabled: Boolean(args.input?.autoSystemCheckEnabled),
       autoSystemCheckIntervalMinutes: Number(args.input?.autoSystemCheckIntervalMinutes ?? 10),
+      notifyOnReply: Boolean(args.input?.notifyOnReply),
+      notifyOnSystemAlert: Boolean(args.input?.notifyOnSystemAlert),
       systemPrompt: args.input?.systemPrompt,
       settingsPath: "Browser preview mock",
     };
@@ -201,6 +205,12 @@ async function mockInvoke(command, args) {
   }
   if (command === "send_chat_message") {
     throw new Error("浏览器预览不连接模型，请在 Tauri 应用中对话。");
+  }
+  if (command === "list_models") {
+    return ["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-4o-mini"];
+  }
+  if (command === "send_notification") {
+    return null;
   }
   return null;
 }

@@ -33,7 +33,7 @@ export const state = {
   toolActivity: "",
   stopRequested: false,
   currentRequestId: null,
-  alwaysOnTop: true,
+  alwaysOnTop: false,
   compactMode: false,
   thinkingStartedAt: null,
   thinkingElapsedMs: 0,
@@ -57,4 +57,12 @@ export const state = {
   platformStyle: "auto", // "auto" | "macos" | "windows" | "linux"
   density: "comfortable", // "comfortable" | "compact"
   reduceMotion: false,
+  // Model list fetched from the provider's /models endpoint (Model view).
+  modelList: [],
+  modelListStatus: "",
+  modelListBusy: false,
+  providerPreset: "custom",
+  // Notifications (System view toggles + backend-driven fires).
+  notifyOnReply: false,
+  notifyOnSystemAlert: false,
 };

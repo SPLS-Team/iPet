@@ -48,15 +48,31 @@ export function renderModelView(container, state, handlers) {
         "Provider",
         `
           <label>
+            <span>接口格式 / 预设</span>
+            <select name="providerPreset" data-role="provider-preset">
+              ${providerPresetOptions(state)}
+            </select>
+            <span class="field-hint">选择常见 OpenAI 兼容服务商一键填入 Base URL，或选「自定义」手动填写。</span>
+          </label>
+          <label>
             <span>Base URL</span>
             <input name="baseUrl" value="${escapeAttr(draft.baseUrl || "")}" aria-invalid="${fieldError(state, "baseUrl") ? "true" : "false"}" />
             ${fieldError(state, "baseUrl")}
           </label>
           <label>
             <span>模型</span>
-            <input name="model" value="${escapeAttr(draft.model || "")}" aria-invalid="${fieldError(state, "model") ? "true" : "false"}" />
+            <input name="model" list="model-list" value="${escapeAttr(draft.model || "")}" aria-invalid="${fieldError(state, "model") ? "true" : "false"}" />
             ${fieldError(state, "model")}
+            <datalist id="model-list" data-role="model-list">
+              ${(state.modelList || [])
+                .map((m) => `<option value="${escapeAttr(m)}"></option>`)
+                .join("")}
+            </datalist>
           </label>
+          <div class="form-actions">
+            <button class="text-button" type="button" data-action="fetch-models" ${state.modelListBusy ? "disabled" : ""}>${icon("refresh")} ${state.modelListBusy ? "获取中..." : "刷新模型列表"}</button>
+            <span class="field-hint" data-role="model-list-status">${escapeHtml(state.modelListStatus || "")}</span>
+          </div>
         `,
       )}
 
@@ -106,4 +122,38 @@ export function renderModelView(container, state, handlers) {
       out.textContent = Number(slider.value).toFixed(1);
     });
   }
+
+  // Provider preset dropdown — apply a Base URL template on change. Editing
+  // the Base URL by hand flips it to "custom".
+  const preset = form.querySelector('[data-role="provider-preset"]');
+  if (preset) {
+    preset.addEventListener("change", () => handlers.onApplyProviderPreset?.(preset.value));
+  }
+  const baseUrlInput = form.querySelector('[name="baseUrl"]');
+  if (baseUrlInput) {
+    baseUrlInput.addEventListener("input", () => handlers.onApplyProviderPreset?.("custom"));
+  }
+
+  form.querySelector('[data-action="fetch-models"]')?.addEventListener("click", () => {
+    handlers.onFetchModels?.();
+  });
+}
+
+const PROVIDER_PRESET_LABELS = [
+  ["custom", "自定义"],
+  ["openai", "OpenAI"],
+  ["deepseek", "DeepSeek"],
+  ["anthropic_proxy", "Anthropic（OpenAI 兼容代理）"],
+  ["openrouter", "OpenRouter"],
+  ["siliconflow", "硅基流动 SiliconFlow"],
+  ["moonshot", "Moonshot Kimi"],
+  ["local", "本地 Ollama（11434）"],
+];
+
+function providerPresetOptions(state) {
+  const current = state.providerPreset || "custom";
+  return PROVIDER_PRESET_LABELS.map(
+    ([value, label]) =>
+      `<option value="${value}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`,
+  ).join("");
 }

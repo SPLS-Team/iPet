@@ -48,6 +48,11 @@ pub struct ChatTurnResult {
     pub text: String,
     pub usage: TokenUsage,
     pub tool_call_count: usize,
+    /// Concatenated reasoning/thinking text the model emitted before its final
+    /// answer, when the provider returns one (e.g. `reasoning_content` in
+    /// DeepSeek / OpenAI o-series-style streaming, or a top-level `reasoning`
+    /// field). Empty for providers that don't surface reasoning.
+    pub reasoning: String,
 }
 
 pub struct LlmClient {
@@ -120,6 +125,7 @@ impl LlmClient {
 
         let mut usage_total = TokenUsage::default();
         let mut tool_call_count = 0usize;
+        let mut reasoning_total = String::new();
 
         for round in 0..MAX_TOOL_ROUNDS {
             // Final allowed round: drop tools so the model must reply with
@@ -147,6 +153,11 @@ impl LlmClient {
 
             if !pending_calls {
                 let text = message.content.unwrap_or_default();
+                if let Some(reasoning) = message.reasoning_content {
+                    if !reasoning.is_empty() {
+                        reasoning_total.push_str(&reasoning);
+                    }
+                }
                 tracing::debug!(
                     rounds = round + 1,
                     tool_calls = tool_call_count,
@@ -157,11 +168,17 @@ impl LlmClient {
                     text,
                     usage: usage_total,
                     tool_call_count,
+                    reasoning: reasoning_total,
                 });
             }
 
             let tool_calls = message.tool_calls.unwrap_or_default();
             tool_call_count += tool_calls.len();
+            if let Some(reasoning) = message.reasoning_content {
+                if !reasoning.is_empty() {
+                    reasoning_total.push_str(&reasoning);
+                }
+            }
 
             messages.push(OpenAiMessage {
                 role: "assistant".to_string(),
@@ -202,33 +219,44 @@ impl LlmClient {
 
     /// Stream a response without using any tools. Used by the no-tools fast
     /// path where we don't need to inspect the response mid-stream for tool
-    /// calls.
-    pub async fn stream_simple<F, Fut>(
+    /// calls. Reasoning text (when the provider returns `reasoning_content`)
+    /// is forwarded to `on_reasoning` so the UI can show the thinking chain
+    /// live; the final answer tokens go through `on_delta` as before.
+    pub async fn stream_simple<F, Fut, R, RFut>(
         &self,
         ui_messages: &[ChatUiMessage],
         on_delta: F,
+        on_reasoning: R,
     ) -> AppResult<ChatTurnResult>
     where
         F: FnMut(String) -> Fut,
         Fut: Future<Output = AppResult<()>>,
+        R: FnMut(String) -> RFut,
+        RFut: Future<Output = AppResult<()>>,
     {
         let messages = self.build_messages(ui_messages);
-        let stream = self.stream_messages(messages, on_delta).await?;
+        let stream = self
+            .stream_messages(messages, on_delta, on_reasoning)
+            .await?;
         Ok(ChatTurnResult {
             text: stream.text,
             usage: stream.usage.unwrap_or_default(),
             tool_call_count: 0,
+            reasoning: stream.reasoning,
         })
     }
 
-    async fn stream_messages<F, Fut>(
+    async fn stream_messages<F, Fut, R, RFut>(
         &self,
         messages: Vec<OpenAiMessage>,
         mut on_delta: F,
+        mut on_reasoning: R,
     ) -> AppResult<StreamResult>
     where
         F: FnMut(String) -> Fut,
         Fut: Future<Output = AppResult<()>>,
+        R: FnMut(String) -> RFut,
+        RFut: Future<Output = AppResult<()>>,
     {
         let body = json!({
             "model": self.settings.model,
@@ -252,6 +280,7 @@ impl LlmClient {
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut final_text = String::new();
+        let mut reasoning_text = String::new();
         let mut usage = None;
 
         while let Some(chunk) = stream.next().await {
@@ -270,6 +299,7 @@ impl LlmClient {
                     if data == "[DONE]" {
                         return Ok(StreamResult {
                             text: final_text,
+                            reasoning: reasoning_text,
                             usage,
                         });
                     }
@@ -286,6 +316,10 @@ impl LlmClient {
                             final_text.push_str(&content);
                             on_delta(content).await?;
                         }
+                        if let Some(reasoning) = choice.delta.reasoning_content {
+                            reasoning_text.push_str(&reasoning);
+                            on_reasoning(reasoning).await?;
+                        }
                     }
                 }
             }
@@ -293,6 +327,7 @@ impl LlmClient {
 
         Ok(StreamResult {
             text: final_text,
+            reasoning: reasoning_text,
             usage,
         })
     }
@@ -376,6 +411,7 @@ impl LlmClient {
 
 struct StreamResult {
     text: String,
+    reasoning: String,
     usage: Option<TokenUsage>,
 }
 
@@ -419,6 +455,11 @@ struct ChatChoice {
 struct ChatChoiceMessage {
     content: Option<String>,
     tool_calls: Option<Vec<ToolCall>>,
+    /// Non-streaming reasoning text, if the provider returns it. Both
+    /// `reasoning_content` (DeepSeek) and `reasoning` (some proxies) are
+    /// accepted.
+    #[serde(default, alias = "reasoning")]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -435,4 +476,8 @@ struct StreamChoice {
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
     content: Option<String>,
+    /// DeepSeek / many OpenAI-compatible reasoning models stream the chain of
+    /// thought here. Optional — most providers omit it.
+    #[serde(default, rename = "reasoning_content")]
+    reasoning_content: Option<String>,
 }

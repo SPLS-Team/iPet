@@ -103,6 +103,26 @@ describe("AppShell view dispatch", () => {
     expect(petRoot.closest("[data-capsule]")).toBeTruthy();
   });
 
+  it("renders a pin button in the titlebar that reflects alwaysOnTop state", () => {
+    const { ctx, calls } = makeCtx("talk");
+    ctx.state.alwaysOnTop = false;
+    ctx.handlers.onToggleTop = () => calls.push("toggleTop");
+    renderAppShell(root, ctx);
+    const pin = root.querySelector('[data-chrome="pin"]');
+    expect(pin).toBeTruthy();
+    expect(pin.classList.contains("active")).toBe(false);
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    pin.click();
+    expect(calls).toContain("toggleTop");
+
+    // When pinned, the button shows the active state + aria-pressed.
+    ctx.state.alwaysOnTop = true;
+    renderAppShell(root, ctx);
+    const pinOn = root.querySelector('[data-chrome="pin"]');
+    expect(pinOn.classList.contains("active")).toBe(true);
+    expect(pinOn.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("renders control center with chrome and a panel", () => {
     const { ctx } = makeCtx("control");
     renderAppShell(root, ctx);

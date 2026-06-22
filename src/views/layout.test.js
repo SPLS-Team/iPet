@@ -57,7 +57,7 @@ function makeState(overrides = {}) {
     systemSnapshot: null,
     autoSystemStatus: "",
     autoSystemCheckBusy: false,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     theme: "system",
     platformStyle: "auto",
     density: "comfortable",
@@ -176,6 +176,23 @@ describe("Control Center section layout sanity", () => {
     expect(container.querySelector('[data-action="run-check"]')).toBeTruthy();
   });
 
+  it("system: notification toggles render and submit carries them", () => {
+    const calls = [];
+    const localHandlers = { ...handlers, onSaveSettings: (partial) => calls.push(partial) };
+    renderSystemView(
+      container,
+      makeState({ settingsDraft: { ...makeState().settingsDraft, notifyOnReply: true } }),
+      localHandlers,
+    );
+    expect(container.querySelector('[name="notifyOnReply"]')).toBeTruthy();
+    expect(container.querySelector('[name="notifyOnSystemAlert"]')).toBeTruthy();
+    expect(container.querySelector('[name="notifyOnReply"]').checked).toBe(true);
+    const form = container.querySelector('[data-role="system-form"]');
+    form.requestSubmit();
+    expect(calls[0].notifyOnReply).toBe(true);
+    expect(calls[0].notifyOnSystemAlert).toBe(false);
+  });
+
   it.each(PLATFORMS)("appearance: theme/platform/density segments + motion toggle (%s)", (plat) => {
     document.documentElement.dataset.platform = plat;
     renderAppearanceView(container, makeState(), handlers);
@@ -194,6 +211,15 @@ describe("Control Center section layout sanity", () => {
     const prompt = container.querySelector('[name="systemPrompt"]');
     expect(prompt).toBeTruthy();
     expect(prompt.getAttribute("rows")).toBe("10");
+  });
+
+  it("model: provider preset dropdown + model datalist + fetch button present", () => {
+    renderModelView(container, makeState({ providerPreset: "openai", modelList: ["gpt-4o", "gpt-4o-mini"] }), handlers);
+    expect(container.querySelector('[data-role="provider-preset"]')).toBeTruthy();
+    expect(container.querySelector('[data-role="provider-preset"]').value).toBe("openai");
+    expect(container.querySelector('[data-role="model-list"]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-role="model-list"] option').length).toBe(2);
+    expect(container.querySelector('[data-action="fetch-models"]')).toBeTruthy();
   });
 
   it("model: .settings-form is a plain container — cards are its children, not peers of a card wrapper", () => {
