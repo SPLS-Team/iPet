@@ -1,6 +1,6 @@
 [package]
 name = "ipet"
-version = "0.4.0"
+version = "0.4.1"
 description = "A lightweight desktop pet with local system tools and LLM chat."
 authors = ["iPet"]
 edition = "2021"
@@ -25,6 +25,7 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tauri = { version = "2.11.2", features = [] }
+tauri-plugin-notification = "2"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1.42"

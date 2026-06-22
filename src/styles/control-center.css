@@ -34,6 +34,33 @@
   font-weight: 700;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 3px 8px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge-builtin {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.badge-local {
+  background: rgba(255, 159, 10, 0.16);
+  color: var(--color-warning);
+}
+
 .field-with-icon {
   position: relative;
 }
@@ -625,6 +652,15 @@ select[aria-invalid="true"] {
   font-weight: 700;
 }
 
+.memory-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.memory-toolbar > .text-button {
+  justify-self: end;
+}
+
 .tool-list-section {
   display: flex;
   flex-direction: column;
@@ -1133,6 +1169,14 @@ input[type="range"]::-moz-range-thumb {
   animation: fade-in-up 420ms var(--ease-spring) both;
 }
 
+.settings-card .metric {
+  background: var(--color-surface-muted);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+}
+
 .metric span {
   display: block;
   margin-bottom: 6px;
@@ -1333,14 +1377,26 @@ td[num] {
 .memory-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .memory-card {
-  padding: 12px 14px;
+  border: 1px solid var(--color-hairline-on-glass);
   border-radius: var(--radius-card);
   background: var(--color-surface);
+  box-shadow: var(--platform-card-shadow);
+  padding: 12px 14px;
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  animation: fade-in-up 420ms var(--ease-spring) both;
+}
+.memory-empty {
+  min-height: 160px;
   border: 1px solid var(--color-hairline-on-glass);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--platform-card-shadow);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
 }
 .memory-head {
   display: flex;

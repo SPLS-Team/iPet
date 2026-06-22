@@ -111,6 +111,28 @@ export function updateChatStreaming(container, state) {
   if (!lastBubble) return false;
 
   lastBubble.innerHTML = renderMarkdown(last.content);
+
+  // Patch the reasoning-chain disclosure in place so live-streaming thinking
+  // tokens show without a full re-render. Reuse the user's open/closed state.
+  const messageEl = messageList.querySelector(".message-row:last-child .message");
+  if (!messageEl) return false;
+  const existing = messageEl.querySelector('[data-role="reasoning-chain"]');
+  const hasReasoning = Boolean(last.reasoning && last.reasoning.trim());
+  if (hasReasoning) {
+    const isOpen = existing ? existing.open : false;
+    const html = `<details class="reasoning-chain" data-role="reasoning-chain" ${isOpen ? "open" : ""}>
+        <summary>${icon("search", { size: 12 })}<span>思考链</span></summary>
+        <div class="reasoning-body markdown-body">${renderMarkdown(last.reasoning)}</div>
+      </details>`;
+    if (existing) {
+      existing.outerHTML = html;
+    } else {
+      messageEl.insertAdjacentHTML("afterbegin", html);
+    }
+  } else if (existing) {
+    existing.remove();
+  }
+
   messageList.scrollTop = messageList.scrollHeight;
   return true;
 }
@@ -156,12 +178,23 @@ function renderMessage(message, _isLast) {
   // Per ui-plan §8.3: user messages carry no role label (right-align + blue
   // already convey authorship); assistant shows a small "iPet" caption.
   const roleLabel = role === "assistant" ? `<div class="message-role">iPet</div>` : "";
+  // Collapsible reasoning/thinking chain. Only render the disclosure when the
+  // assistant actually produced reasoning text; collapsed by default so it
+  // doesn't crowd the answer, but one click reveals the full chain (rendered
+  // as markdown so model-emitted lists/inline-code read naturally).
+  const reasoning = role === "assistant" && message.reasoning && message.reasoning.trim()
+    ? `<details class="reasoning-chain" data-role="reasoning-chain">
+        <summary>${icon("search", { size: 12 })}<span>思考链</span></summary>
+        <div class="reasoning-body markdown-body">${renderMarkdown(message.reasoning)}</div>
+      </details>`
+    : "";
 
   return `
     <div class="message-row message-row-${role}" data-role="message" data-message-role="${role}">
       ${role === "assistant" ? `<div class="message-avatar">${avatar}</div>` : ""}
       <div class="message message-${role}">
         ${roleLabel}
+        ${reasoning}
         <div class="message-text ${role === "assistant" ? "markdown-body" : ""}">
           ${content}
         </div>

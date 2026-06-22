@@ -156,6 +156,55 @@
   line-height: 1.2;
 }
 
+/* Collapsible reasoning / thinking chain (ui-plan §8.6 — "思考链"). Sits above
+   the answer text, muted + italic so it reads as the model's scratchpad rather
+   than part of the reply. Closed by default; the user opens it to inspect the
+   full chain. */
+.reasoning-chain {
+  margin: 2px 0 8px;
+  padding: 6px 9px;
+  border: 1px dashed var(--color-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: 12px;
+}
+.reasoning-chain > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  font-weight: 600;
+  list-style: none;
+  user-select: none;
+}
+.reasoning-chain > summary::-webkit-details-marker {
+  display: none;
+}
+.reasoning-chain > summary .icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.8;
+}
+.reasoning-chain[open] > summary {
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+}
+.reasoning-body {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  font-style: italic;
+  border-left: 2px solid var(--color-hairline);
+  padding-left: 8px;
+}
+.reasoning-body p {
+  margin: 0 0 6px;
+}
+.reasoning-body p:last-child {
+  margin-bottom: 0;
+}
+
 .message-text {
   white-space: pre-wrap;
   line-height: 1.58;

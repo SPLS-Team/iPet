@@ -56,6 +56,8 @@ const ctx = {
     onNewSession: () => createSession(null),
     onRenameSession: requestRenameSession,
     onDeleteSession: requestDeleteSession,
+    onFetchModels: fetchModels,
+    onApplyProviderPreset: applyProviderPreset,
   },
 };
 
@@ -117,6 +119,15 @@ async function bindChatEvents() {
       beginThinking("思考中");
       state.toolActivity = "";
       pet.setMood("thinking");
+    } else if (payload.kind === "reasoning") {
+      // Reasoning/thinking-chain tokens arrive before the final answer (and,
+      // on the tool-loop path, as one bulk event). Accumulate onto the
+      // trailing assistant placeholder so the UI can surface a collapsible
+      // "思考链". Stay in the thinking state — the answer hasn't started yet.
+      appendAssistantReasoning(payload.content || "");
+      const panel = document.querySelector("#panel");
+      const patched = state.viewMode === "talk" && updateChatStreaming(panel, state);
+      if (!patched) shouldRender = true;
     } else if (payload.kind === "tool") {
       state.toolActivity = payload.content || "正在使用工具";
       beginThinking(state.toolActivity);
@@ -140,6 +151,7 @@ async function bindChatEvents() {
       stopThinking();
       pet.setMood("idle");
       refreshStatsSilently();
+      maybeNotifyReply();
       shouldRender = true;
     }
     if (shouldRender) render();
@@ -168,7 +180,23 @@ async function loadSettings() {
     autoSystemCheckEnabled: Boolean(state.settings.autoSystemCheckEnabled),
     autoSystemCheckIntervalMinutes: Number(state.settings.autoSystemCheckIntervalMinutes ?? 10),
     systemPrompt: state.settings.systemPrompt,
+    notifyOnReply: Boolean(state.settings.notifyOnReply),
+    notifyOnSystemAlert: Boolean(state.settings.notifyOnSystemAlert),
   };
+  // Derive the provider preset from the saved Base URL so the dropdown shows
+  // the matching entry on load (custom when it doesn't match any preset).
+  state.providerPreset = detectProviderPreset(state.settings.baseUrl);
+  // Notification toggles are persisted preferences (set in SystemView).
+  state.notifyOnReply = state.settings.notifyOnReply;
+  state.notifyOnSystemAlert = state.settings.notifyOnSystemAlert;
+}
+
+function detectProviderPreset(baseUrl) {
+  const value = (baseUrl || "").trim().replace(/\/+$/, "");
+  for (const [key, url] of Object.entries(PROVIDER_PRESETS)) {
+    if (url.replace(/\/+$/, "") === value) return key;
+  }
+  return "custom";
 }
 
 async function loadMessages() {
@@ -549,6 +577,17 @@ function appendAssistantDelta(delta) {
   }
 }
 
+/** Accumulate reasoning/thinking-chain text onto the trailing assistant bubble. */
+function appendAssistantReasoning(delta) {
+  if (state.stopRequested || !delta) return;
+  const last = state.messages[state.messages.length - 1];
+  if (last?.role === "assistant") {
+    last.reasoning = (last.reasoning || "") + delta;
+  } else {
+    state.messages.push({ role: "assistant", content: "", reasoning: delta });
+  }
+}
+
 /**
  * Locally stop the active chat: drop the requestId so the still-running backend
  * stream's later events are ignored, and return the UI to idle. The backend
@@ -613,6 +652,8 @@ async function saveSettings(partial = {}) {
     autoSystemCheckEnabled: partial.autoSystemCheckEnabled ?? base.autoSystemCheckEnabled,
     autoSystemCheckIntervalMinutes:
       partial.autoSystemCheckIntervalMinutes ?? base.autoSystemCheckIntervalMinutes,
+    notifyOnReply: partial.notifyOnReply ?? base.notifyOnReply ?? false,
+    notifyOnSystemAlert: partial.notifyOnSystemAlert ?? base.notifyOnSystemAlert ?? false,
   };
 
   // Validate only the fields this view is responsible for (ui-plan §9.5).
@@ -644,7 +685,11 @@ async function saveSettings(partial = {}) {
       autoSystemCheckEnabled: Boolean(state.settings.autoSystemCheckEnabled),
       autoSystemCheckIntervalMinutes: Number(state.settings.autoSystemCheckIntervalMinutes ?? 10),
       systemPrompt: state.settings.systemPrompt,
+      notifyOnReply: Boolean(state.settings.notifyOnReply),
+      notifyOnSystemAlert: Boolean(state.settings.notifyOnSystemAlert),
     };
+    state.notifyOnReply = state.settings.notifyOnReply;
+    state.notifyOnSystemAlert = state.settings.notifyOnSystemAlert;
     state.settingsStatus = "设置已保存";
     state.settingsSaveFailed = false;
     showToast("设置已保存", "success");
@@ -667,6 +712,94 @@ async function toggleAlwaysOnTop() {
   state.alwaysOnTop = !state.alwaysOnTop;
   await invoke("set_always_on_top", { enabled: state.alwaysOnTop });
   render();
+}
+
+/** Provider presets map a friendly name to a Base URL template, so users can
+ *  connect common OpenAI-compatible endpoints without remembering the path.
+ *  "custom" leaves the current Base URL alone. */
+const PROVIDER_PRESETS = {
+  openai: "https://api.openai.com/v1",
+  deepseek: "https://api.deepseek.com/v1",
+  anthropic_proxy: "https://api.anthropic.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  siliconflow: "https://api.siliconflow.cn/v1",
+  moonshot: "https://api.moonshot.cn/v1",
+  local: "http://127.0.0.1:11434/v1",
+};
+
+function applyProviderPreset(preset) {
+  if (preset === "custom" || !PROVIDER_PRESETS[preset]) {
+    state.providerPreset = "custom";
+    render();
+    return;
+  }
+  state.providerPreset = preset;
+  // Apply the preset URL into the draft so the user sees it immediately and
+  // can still edit before saving.
+  if (state.settingsDraft) {
+    state.settingsDraft = { ...state.settingsDraft, baseUrl: PROVIDER_PRESETS[preset] };
+  }
+  render();
+}
+
+/** Fetch the model list from the provider and stash it for the Model view's
+ *  datalist. Uses the currently-saved settings (saved Base URL + key), so the
+ *  user must save first if they just changed them. */
+async function fetchModels() {
+  state.modelListStatus = "正在获取模型列表...";
+  state.modelListBusy = true;
+  render();
+  try {
+    const models = await invoke("list_models");
+    state.modelList = models || [];
+    state.modelListStatus = models?.length
+      ? `已获取 ${models.length} 个模型`
+      : "接口未返回任何模型";
+  } catch (error) {
+    state.modelList = [];
+    state.modelListStatus = `获取失败：${String(error)}`;
+    showToast(`获取模型列表失败：${String(error)}`, "error");
+  } finally {
+    state.modelListBusy = false;
+    render();
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notifications — fire an OS notification on reply-completion and on a       */
+/* high-load auto system-check. Both are opt-in toggles in the System view;   */
+/* the browser-preview mock no-ops. Failures are swallowed so a toast/notify  */
+/* glitch never breaks the chat turn that triggered it.                       */
+/* -------------------------------------------------------------------------- */
+
+/** CPU or memory usage (%) at or above which an auto system-check counts as a
+ *  high-load alert worth notifying about. */
+const SYSTEM_ALERT_THRESHOLD = 85;
+
+function maybeNotifyReply() {
+  if (!state.settings?.notifyOnReply) return;
+  const last = state.messages[state.messages.length - 1];
+  if (!last || last.role !== "assistant" || !last.content || last.type === "error") return;
+  // Trim the reply to a short preview for the notification body.
+  const preview = last.content.replace(/\s+/g, " ").trim().slice(0, 120);
+  sendNotificationSafe("iPet 已回复", preview || "回答已完成");
+}
+
+function maybeNotifySystemAlert(snapshot, summary) {
+  if (!state.settings?.notifyOnSystemAlert || !snapshot) return;
+  const cpu = Number(snapshot.cpuUsage) || 0;
+  const memory = Number(snapshot.memory?.usagePercent) || 0;
+  if (cpu < SYSTEM_ALERT_THRESHOLD && memory < SYSTEM_ALERT_THRESHOLD) return;
+  sendNotificationSafe("iPet 系统状态告警", `负载偏高：${summary}`);
+}
+
+async function sendNotificationSafe(title, body) {
+  try {
+    await invoke("send_notification", { title, body });
+  } catch (error) {
+    // Non-fatal: notifications are best-effort. Log so it's debuggable.
+    console.warn("notification failed:", error);
+  }
 }
 
 async function enableTemporaryPassthrough() {
@@ -989,6 +1122,7 @@ async function runAutoSystemCheck({ force = false } = {}) {
     const summary = formatSystemSnapshot(snapshot);
     state.autoSystemStatus = `${formatClockTime(new Date())} 检查完成：${summary}`;
     if (!state.chatBusy) pet.setLine(summary);
+    maybeNotifySystemAlert(snapshot, summary);
   } catch (error) {
     state.autoSystemStatus = `自动检查失败：${String(error)}`;
   } finally {

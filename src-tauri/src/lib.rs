@@ -14,7 +14,7 @@ use config::{LlmSettingsInput, LlmSettingsStatus};
 use ipet_tool_get_system_status::{SystemMonitor, SystemSnapshot};
 use ipet_tool_scan_disk::{self as disk_scanner, DiskScanRequest, DiskScanResult, ScanCancellation};
 use llm_client::{ChatRequest, ChatTurnResult, LlmClient};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use storage::{ChatRecord, ChatSession, Memory, Storage, TokenUsageStats, ToolConfig, ToolConfigInput};
@@ -326,6 +326,58 @@ fn get_token_stats(state: State<'_, AppState>) -> Result<TokenUsageStats, String
     state.storage.token_stats().map_err(public_error)
 }
 
+/// Fetch the model list from the configured provider's `/models` endpoint.
+/// Works against any OpenAI-compatible `GET {base_url}/models` (returns
+/// `{ data: [{ id: "..." }, ...] }`). Used by the Model view's "刷新模型列表"
+/// button so the user can pick from what the endpoint actually offers instead
+/// of typing a model id blind. Requires a saved API key.
+#[tauri::command]
+async fn list_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    list_models_inner(&state).await.map_err(public_error)
+}
+
+async fn list_models_inner(state: &State<'_, AppState>) -> AppResult<Vec<String>> {
+    let settings = state.storage.load_llm_settings()?;
+    let api_key = settings
+        .api_key
+        .as_ref()
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| AppError::Config("请先保存 API Key 后再获取模型列表".to_string()))?;
+    let base = settings.normalized_base_url();
+    if base.is_empty() {
+        return Err(AppError::Config("Base URL 不能为空".to_string()));
+    }
+
+    let url = format!("{base}/models");
+    let response = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|e| AppError::Model(format!("请求模型列表失败：{e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::Model(format!("模型列表接口返回错误：{e}")))?;
+
+    let body: ModelsResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::Model(format!("解析模型列表失败：{e}")))?;
+    let mut ids: Vec<String> = body.data.into_iter().map(|m| m.id).collect();
+    ids.sort();
+    Ok(ids)
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsResponse {
+    #[serde(default)]
+    data: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelEntry {
+    id: String,
+}
+
 #[tauri::command]
 async fn send_chat_message(
     window: Window,
@@ -459,6 +511,26 @@ fn set_preference(key: String, value: String, state: State<'_, AppState>) -> Res
         .map_err(public_error)
 }
 
+/// Send a desktop notification via the OS notification center. Used by the
+/// frontend (browser path falls back to its mock) to ping the user when a chat
+/// reply completes or when an auto system-check detects a high-load condition.
+/// Failures are non-fatal — we surface them as a string so the caller can log
+/// without crashing the chat turn that triggered the notification.
+#[tauri::command]
+async fn send_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
 fn get_llm_settings_inner(state: &State<'_, AppState>) -> AppResult<LlmSettingsStatus> {
     let settings = state.storage.load_llm_settings()?;
     Ok(LlmSettingsStatus::from_settings(
@@ -527,6 +599,10 @@ async fn send_chat_message_inner(
         text: assistant_text,
         usage: usage_total,
         tool_call_count,
+        // Reasoning is emitted live via the stream callback (no-tools path) or
+        // as a bulk event above (tools path), so the final aggregated value
+        // isn't needed here — bind it away.
+        reasoning: _reasoning_text,
     } = if has_tools {
         let result = client
             .complete_with_tool_loop(&request.messages, &dispatcher)
@@ -534,18 +610,36 @@ async fn send_chat_message_inner(
         if result.tool_call_count > 0 {
             emit_chat_event(&window, &request.request_id, "tool", "本地工具已执行")?;
         }
+        // The tool-loop path is non-streaming, so the reasoning text arrives
+        // in one shot — emit it before the answer chunks.
+        if !result.reasoning.is_empty() {
+            emit_chat_event(&window, &request.request_id, "reasoning", &result.reasoning)?;
+        }
         emit_text_as_chunks(&window, &request.request_id, &result.text).await?;
         result
     } else {
+        let window_for_reasoning = window.clone();
+        let request_id_for_reasoning = request.request_id.clone();
         client
-            .stream_simple(&request.messages, |delta| {
-                let window = window.clone();
-                let request_id = request.request_id.clone();
-                async move {
-                    emit_chat_event(&window, &request_id, "delta", &delta)?;
-                    Ok(())
-                }
-            })
+            .stream_simple(
+                &request.messages,
+                |delta| {
+                    let window = window.clone();
+                    let request_id = request.request_id.clone();
+                    async move {
+                        emit_chat_event(&window, &request_id, "delta", &delta)?;
+                        Ok(())
+                    }
+                },
+                |reasoning| {
+                    let window = window_for_reasoning.clone();
+                    let request_id = request_id_for_reasoning.clone();
+                    async move {
+                        emit_chat_event(&window, &request_id, "reasoning", &reasoning)?;
+                        Ok(())
+                    }
+                },
+            )
             .await?
     };
 
@@ -626,6 +720,7 @@ fn init_tracing() {
 pub fn run() {
     init_tracing();
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -696,6 +791,7 @@ pub fn run() {
             delete_tool,
             import_tool_from_path,
             get_token_stats,
+            list_models,
             send_chat_message,
             set_always_on_top,
             set_mouse_passthrough,
@@ -704,7 +800,8 @@ pub fn run() {
             start_window_drag,
             set_compact_window,
             get_preference,
-            set_preference
+            set_preference,
+            send_notification
         ])
         .run(tauri::generate_context!())
         .expect("error while running iPet");

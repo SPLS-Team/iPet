@@ -15,8 +15,8 @@ export function renderMemoryView(container, state, handlers) {
   const memories = state.memories ?? [];
 
   container.innerHTML = `
-    <div class="tool-page">
-      <section class="tool-toolbar" aria-label="记忆库">
+    <div class="settings-page memory-page">
+      <section class="tool-toolbar memory-toolbar" aria-label="记忆库">
         <div class="tool-toolbar-copy">
           <h3>长期记忆</h3>
           <p>跨会话持久的事实与偏好。模型在对话中主动保存，并注入系统提示词辅助后续回答。</p>
@@ -40,7 +40,7 @@ export function renderMemoryView(container, state, handlers) {
 
 function renderEmpty() {
   return `
-    <div class="empty-state">
+    <div class="empty-state memory-empty">
       <strong>还没有记忆</strong>
       <span>模型在对话中觉得值得长期记住的用户偏好或事实时，会调用记忆工具保存。你也可以等待模型主动记忆。</span>
     </div>

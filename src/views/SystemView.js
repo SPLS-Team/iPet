@@ -60,6 +60,24 @@ export function renderSystemView(container, state, handlers) {
             </div>
           `,
         )}
+
+        ${card(
+          "通知",
+          `
+            <p class="card-hint">通过系统通知中心提醒你。可分别开关「回答完成」与「系统负载告警」。</p>
+            <label class="checkbox-row">
+              <input name="notifyOnReply" type="checkbox" ${draft.notifyOnReply ? "checked" : ""} />
+              <span>回答完成时通知</span>
+            </label>
+            <label class="checkbox-row">
+              <input name="notifyOnSystemAlert" type="checkbox" ${draft.notifyOnSystemAlert ? "checked" : ""} />
+              <span>系统负载告警时通知（CPU 或内存 ≥ 85%）</span>
+            </label>
+            <div class="form-actions">
+              <button class="text-button primary" type="submit">${icon("check")} 保存</button>
+            </div>
+          `,
+        )}
       </form>
 
       ${card(
@@ -105,6 +123,8 @@ export function renderSystemView(container, state, handlers) {
     handlers.onSaveSettings({
       autoSystemCheckEnabled: form.elements.autoSystemCheckEnabled.checked,
       autoSystemCheckIntervalMinutes: Number(form.elements.autoSystemCheckIntervalMinutes.value),
+      notifyOnReply: form.elements.notifyOnReply.checked,
+      notifyOnSystemAlert: form.elements.notifyOnSystemAlert.checked,
     });
   });
 

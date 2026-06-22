@@ -81,4 +81,29 @@ describe("ChatBubble message rendering", () => {
     renderChat(container, state, handlers);
     expect(updateChatStreaming(container, state)).toBe(false);
   });
+
+  it("renders a collapsible reasoning chain only when reasoning is present", () => {
+    renderChat(container, baseState({ messages: [
+      { role: "assistant", content: "answer", reasoning: "let me think..." },
+      { role: "assistant", content: "no reasoning here" },
+    ] }), handlers);
+    const chains = container.querySelectorAll('[data-role="reasoning-chain"]');
+    expect(chains).toHaveLength(1);
+    expect(chains[0].tagName).toBe("DETAILS");
+    expect(chains[0].querySelector(".reasoning-body").textContent).toContain("let me think");
+  });
+
+  it("streaming fast path patches the reasoning chain live and preserves open state", () => {
+    const state = baseState({ messages: [{ role: "assistant", content: "", reasoning: "step 1" }] });
+    renderChat(container, state, handlers);
+    // Open the disclosure, then stream more reasoning + answer text.
+    const details = container.querySelector('[data-role="reasoning-chain"]');
+    details.open = true;
+    state.messages[0].reasoning = "step 1\nstep 2";
+    state.messages[0].content = "done";
+    expect(updateChatStreaming(container, state)).toBe(true);
+    const updated = container.querySelector('[data-role="reasoning-chain"]');
+    expect(updated.open).toBe(true);
+    expect(updated.querySelector(".reasoning-body").textContent).toContain("step 2");
+  });
 });

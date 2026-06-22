@@ -251,6 +251,12 @@
 :root[data-theme="dark"] .session-select {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d2d2d7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
 }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .session-select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23d2d2d7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  }
+}
 .session-new {
   flex: 0 0 auto;
   width: 26px;
@@ -543,6 +549,19 @@
 .window-button.danger:hover {
   background: var(--color-danger-soft);
   color: var(--color-danger);
+}
+
+/* Active (toggled-on) window button — e.g. the pin / always-on-top button
+   when the window is pinned. Tints with the accent so the on-state reads at a
+   glance without crowding the titlebar. */
+.window-button.active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent-ring);
+}
+.window-button.active:hover {
+  background: var(--color-accent-ring);
+  color: var(--color-accent);
 }
 
 /* -------------------------------------------------------------------------

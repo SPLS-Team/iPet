@@ -13,6 +13,14 @@ pub struct LlmSettings {
     pub auto_system_check_enabled: bool,
     #[serde(default = "default_auto_system_check_interval_minutes")]
     pub auto_system_check_interval_minutes: u64,
+    /// Fire an OS notification when a chat reply completes (user-facing toggle
+    /// in the System view). Off by default.
+    #[serde(default)]
+    pub notify_on_reply: bool,
+    /// Fire an OS notification when the auto system-check detects a high-load
+    /// condition (CPU or memory above the alert threshold).
+    #[serde(default)]
+    pub notify_on_system_alert: bool,
 }
 
 impl Default for LlmSettings {
@@ -26,6 +34,8 @@ impl Default for LlmSettings {
             system_prompt: "你是 iPet，一个常驻桌面的轻量助手。回答要简洁，必要时主动使用本地工具查看系统状态或分析目录占用。".to_string(),
             auto_system_check_enabled: false,
             auto_system_check_interval_minutes: default_auto_system_check_interval_minutes(),
+            notify_on_reply: false,
+            notify_on_system_alert: false,
         }
     }
 }
@@ -66,6 +76,8 @@ pub struct LlmSettingsStatus {
     pub system_prompt: String,
     pub auto_system_check_enabled: bool,
     pub auto_system_check_interval_minutes: u64,
+    pub notify_on_reply: bool,
+    pub notify_on_system_alert: bool,
     pub settings_path: String,
 }
 
@@ -84,6 +96,8 @@ impl LlmSettingsStatus {
             system_prompt: settings.system_prompt.clone(),
             auto_system_check_enabled: settings.auto_system_check_enabled,
             auto_system_check_interval_minutes: settings.auto_system_check_interval_minutes,
+            notify_on_reply: settings.notify_on_reply,
+            notify_on_system_alert: settings.notify_on_system_alert,
             settings_path: settings_path.display().to_string(),
         }
     }
@@ -101,6 +115,8 @@ pub struct LlmSettingsInput {
     pub system_prompt: String,
     pub auto_system_check_enabled: bool,
     pub auto_system_check_interval_minutes: u64,
+    pub notify_on_reply: bool,
+    pub notify_on_system_alert: bool,
 }
 
 impl LlmSettingsInput {
@@ -112,6 +128,8 @@ impl LlmSettingsInput {
         current.system_prompt = self.system_prompt.trim().to_string();
         current.auto_system_check_enabled = self.auto_system_check_enabled;
         current.auto_system_check_interval_minutes = self.auto_system_check_interval_minutes;
+        current.notify_on_reply = self.notify_on_reply;
+        current.notify_on_system_alert = self.notify_on_system_alert;
 
         if self.clear_api_key {
             current.api_key = None;
@@ -204,6 +222,8 @@ mod tests {
             system_prompt: s.system_prompt.clone(),
             auto_system_check_enabled: false,
             auto_system_check_interval_minutes: 10,
+            notify_on_reply: false,
+            notify_on_system_alert: false,
         };
         input.merge_into(&mut s);
         assert!(s.api_key.is_none(), "clear_api_key should win over a provided key");
@@ -223,6 +243,8 @@ mod tests {
             system_prompt: s.system_prompt.clone(),
             auto_system_check_enabled: false,
             auto_system_check_interval_minutes: 10,
+            notify_on_reply: false,
+            notify_on_system_alert: false,
         };
         input.merge_into(&mut s);
         assert_eq!(s.api_key.as_deref(), Some("keepme"));
