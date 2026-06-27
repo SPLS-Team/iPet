@@ -21,6 +21,11 @@ const PATHS = {
 
   // Actions
   send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+  play: '<path d="M6 4l14 8L6 20z"/>',
+  pause: '<path d="M9 4v16M15 4v16"/>',
+  skip: '<path d="M5 4l11 8-11 8z"/><path d="M20 5v14"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/>',
+  coffee: '<path d="M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 9h2a2 2 0 0 1 0 6h-2"/><path d="M7 2v2M11 2v2"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
   trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/>',

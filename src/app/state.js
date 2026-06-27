@@ -28,6 +28,11 @@ export const state = {
   stats: null,
   statsStatus: "",
   lastStatsRefreshAt: null,
+  // App-usage (desktop "screen time") — foreground seconds aggregated by the
+  // backend sampler. `appUsageRange` drives the today/7d/30d selector.
+  appUsage: null,
+  appUsageRange: "today",
+  appUsageStatus: "",
   chatBusy: false,
   chatStatus: "",
   toolActivity: "",
@@ -65,4 +70,25 @@ export const state = {
   // Notifications (System view toggles + backend-driven fires).
   notifyOnReply: false,
   notifyOnSystemAlert: false,
+  // Pomodoro timer (standard 25/5 cycle). `phase` is idle|work|break; `running`
+  // gates the 1s tick. Durations persist via the `ipet:pomodoro` preference;
+  // `completedWorkCount` is per-session (ephemeral). The capsule pill + talk
+  // chip both read this, patched each second without a full re-render.
+  pomodoro: {
+    phase: "idle", // "idle" | "work" | "break"
+    running: false,
+    remainingSec: 25 * 60,
+    totalSec: 25 * 60,
+    completedWorkCount: 0,
+    workMinutes: 25,
+    breakMinutes: 5,
+    longBreakMinutes: 15,
+    longBreakEvery: 4,
+    autoStartBreak: true,
+    autoStartWork: false,
+  },
+  pomodoroTimer: null,
+  // Pomodoro completion history (persisted server-side), shown in the Usage
+  // view alongside app-usage. Reloaded on entry to the usage section.
+  pomodoroStats: null,
 };

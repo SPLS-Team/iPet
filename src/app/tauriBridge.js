@@ -61,6 +61,8 @@ async function mockInvoke(command, args) {
       autoSystemCheckIntervalMinutes: 10,
       notifyOnReply: false,
       notifyOnSystemAlert: false,
+      trackAppUsage: true,
+      appUsageIdleMinutes: 5,
       systemPrompt:
         "你是 iPet，一个常驻桌面的轻量助手。回答要简洁，必要时主动使用本地工具查看系统状态或分析目录占用。",
       settingsPath: "Browser preview mock",
@@ -77,6 +79,8 @@ async function mockInvoke(command, args) {
       autoSystemCheckIntervalMinutes: Number(args.input?.autoSystemCheckIntervalMinutes ?? 10),
       notifyOnReply: Boolean(args.input?.notifyOnReply),
       notifyOnSystemAlert: Boolean(args.input?.notifyOnSystemAlert),
+      trackAppUsage: Boolean(args.input?.trackAppUsage ?? true),
+      appUsageIdleMinutes: Number(args.input?.appUsageIdleMinutes ?? 5),
       systemPrompt: args.input?.systemPrompt,
       settingsPath: "Browser preview mock",
     };
@@ -115,6 +119,31 @@ async function mockInvoke(command, args) {
           properties: {
             path: { type: "string" },
           },
+        },
+      },
+      {
+        name: "control_pomodoro",
+        displayName: "番茄钟控制",
+        description: "控制 iPet 当前聊天页的番茄钟：开始、暂停、继续、跳过、重置或调整时长。",
+        kind: "builtin",
+        enabled: true,
+        builtIn: true,
+        parameters: {
+          type: "object",
+          required: ["action"],
+          properties: {
+            action: {
+              type: "string",
+              enum: ["start", "pause", "resume", "toggle", "skip", "reset", "configure"],
+            },
+            workMinutes: { type: "integer", minimum: 1, maximum: 90 },
+            breakMinutes: { type: "integer", minimum: 1, maximum: 60 },
+            longBreakMinutes: { type: "integer", minimum: 1, maximum: 60 },
+            longBreakEvery: { type: "integer", minimum: 2, maximum: 12 },
+            autoStartBreak: { type: "boolean" },
+            autoStartWork: { type: "boolean" },
+          },
+          additionalProperties: false,
         },
       },
       {
@@ -168,6 +197,29 @@ async function mockInvoke(command, args) {
         },
       ],
     };
+  }
+  if (command === "get_app_usage") {
+    return {
+      range: args.range || "today",
+      totalSeconds: 5400,
+      byApp: [
+        { appKey: "code", appName: "Code", seconds: 3000, lastSeen: "preview" },
+        { appKey: "chrome", appName: "Chrome", seconds: 1500, lastSeen: "preview" },
+        { appKey: "explorer", appName: "Explorer", seconds: 900, lastSeen: "preview" },
+      ],
+      byDay: [{ day: "2026-06-26", seconds: 5400 }],
+    };
+  }
+  if (command === "get_pomodoro_stats") {
+    return {
+      range: args.range || "today",
+      totalWork: 3,
+      totalBreak: 2,
+      byDay: [{ day: "2026-06-26", workCount: 3, breakCount: 2 }],
+    };
+  }
+  if (command === "record_pomodoro_session") {
+    return null;
   }
   if (command === "get_system_status") {
     return {

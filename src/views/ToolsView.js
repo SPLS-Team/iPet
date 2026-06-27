@@ -24,8 +24,8 @@ export function renderToolsView(container, state, handlers) {
 
       <section class="tool-toolbar" aria-label="工具筛选">
         <div class="tool-toolbar-copy">
-          <h3>工具库</h3>
-          <p>管理模型可调用的内置、HTTP 与本地工具。</p>
+          <h3>筛选与管理</h3>
+          <p>按名称或描述快速定位工具，再查看启用状态和调用 schema。</p>
         </div>
         <label class="tool-search">
           <span>搜索工具</span>

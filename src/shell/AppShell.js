@@ -1,5 +1,5 @@
 import { renderWindowChrome, bindWindowChrome } from "./WindowChrome.js";
-import { renderCompanionCapsule, capsuleStatusText } from "./CompanionCapsule.js";
+import { renderCompanionCapsule, capsulePillText } from "./CompanionCapsule.js";
 import { renderTalkWorkspace, bindTalkWorkspace } from "./TalkWorkspace.js";
 import { renderControlCenter, bindControlCenter } from "./ControlCenter.js";
 
@@ -91,6 +91,14 @@ function bindCapsule(ctx) {
     },
     true,
   );
+  // Right-click → expand into talk. The pill window is only ~46px tall, so an
+  // in-window context menu gets clipped (only the first item shows); expand is
+  // the one action users actually want from the shrunken form, so right-click
+  // does that directly. Prevent the native browser menu either way.
+  capsule.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    ctx.handlers.onExpand();
+  });
 }
 
 function onDragMove(event) {
@@ -110,4 +118,4 @@ function onDragUp() {
 
 let dragCtx = null;
 
-export { capsuleStatusText };
+export { capsulePillText };

@@ -1,6 +1,6 @@
 [package]
 name = "ipet"
-version = "0.4.1"
+version = "0.5.0"
 description = "A lightweight desktop pet with local system tools and LLM chat."
 authors = ["iPet"]
 edition = "2021"
@@ -30,3 +30,21 @@ thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1.42"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+
+# Windows-only: raw bindings for the foreground-window + idle probes used by
+# the app-usage sampler. `windows-sys` is zero-overhead (no wrapper allocs);
+# gated to `windows` so other targets don't pull it in.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+# macOS-only: the `objc` runtime crate for NSWorkspace frontmostApplication +
+# CoreGraphics idle (linked as frameworks from the mac module). Linux uses
+# `xprop` via std::process, so it needs no extra crate.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"

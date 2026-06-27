@@ -1,0 +1,38 @@
+{
+  "name": "app_usage_stats",
+  "displayName": "应用使用时长",
+  "description": "统计本机各应用的累计前台使用时长。可按 today/7d/30d 范围查询，返回按应用聚合的秒数和按日趋势。数据由 iPet 后台采样本地记录，仅本机存储。",
+  "kind": "builtin",
+  "enabled": true,
+  "builtIn": true,
+  "version": "1.0.0",
+  "runtime": {
+    "type": "rust-builtin",
+    "dispatcher": "ToolDispatcher::dispatch_builtin",
+    "source": "src-tauri/src/storage/usage.rs"
+  },
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "range": {
+        "type": "string",
+        "enum": ["today", "7d", "30d"],
+        "default": "today",
+        "description": "统计范围：今天 / 近 7 天 / 近 30 天。"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 15,
+        "description": "最多返回多少个应用（按总时长降序）。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "permissions": ["system.usage.read"],
+  "safety": {
+    "readOnly": true,
+    "notes": "只读取本地聚合后的使用时长统计，不暴露窗口标题或文档内容。"
+  }
+}

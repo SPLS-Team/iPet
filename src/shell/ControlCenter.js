@@ -16,13 +16,13 @@ import { renderMemoryView } from "../views/MemoryView.js";
  */
 
 const SECTIONS = [
-  { id: "model", label: "模型", icon: "model" },
-  { id: "persona", label: "人设", icon: "persona" },
-  { id: "tools", label: "工具", icon: "tools" },
-  { id: "usage", label: "用量", icon: "stats" },
-  { id: "system", label: "系统", icon: "settings" },
-  { id: "memory", label: "记忆", icon: "bookmark" },
-  { id: "appearance", label: "外观", icon: "eyeOff" },
+  { id: "model", label: "模型", icon: "model", title: "模型连接", desc: "配置供应商、模型和生成参数，决定 iPet 如何回答。" },
+  { id: "persona", label: "人设", icon: "persona", title: "人格与边界", desc: "定义 iPet 的身份、语气、主动性和工具使用边界。" },
+  { id: "tools", label: "工具", icon: "tools", title: "工具库", desc: "管理模型可以调用的内置、本地和 HTTP 工具。" },
+  { id: "usage", label: "用量", icon: "stats", title: "用量仪表盘", desc: "查看 token、工具调用、应用使用时长和番茄钟记录。" },
+  { id: "system", label: "系统", icon: "settings", title: "系统与自动化", desc: "配置系统状态感知、通知、窗口行为和本机诊断。" },
+  { id: "memory", label: "记忆", icon: "bookmark", title: "长期记忆", desc: "查看、刷新、编辑和删除跨会话持久保存的事实与偏好。" },
+  { id: "appearance", label: "外观", icon: "eyeOff", title: "外观偏好", desc: "调整主题、平台风格、动效和界面密度。" },
 ];
 
 export function renderControlCenter(_ctx) {
@@ -68,11 +68,30 @@ export function bindControlCenter(ctx) {
   const panel = document.querySelector("#panel");
   if (!panel) return;
   const section = state.controlSection;
-  if (section === "persona") renderPersonaView(panel, state, handlers);
-  else if (section === "tools") renderToolsView(panel, state, handlers);
-  else if (section === "usage") renderUsageView(panel, state, handlers);
-  else if (section === "system") renderSystemView(panel, state, handlers);
-  else if (section === "memory") renderMemoryView(panel, state, handlers);
-  else if (section === "appearance") renderAppearanceView(panel, state, handlers);
-  else renderModelView(panel, state, handlers);
+  const active = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
+  panel.innerHTML = `
+    <div class="control-page-shell">
+      <header class="control-page-hero">
+        <div class="control-page-title">
+          <span class="control-page-icon" aria-hidden="true">${icon(active.icon)}</span>
+          <div>
+            <p class="control-page-kicker">控制中心</p>
+            <h2>${escapeHtml(active.title)}</h2>
+            <p>${escapeHtml(active.desc)}</p>
+          </div>
+        </div>
+        <span class="control-page-badge">${escapeHtml(active.label)}</span>
+      </header>
+      <div class="control-page-body" data-role="control-page-body"></div>
+    </div>
+  `;
+
+  const body = panel.querySelector('[data-role="control-page-body"]');
+  if (section === "persona") renderPersonaView(body, state, handlers);
+  else if (section === "tools") renderToolsView(body, state, handlers);
+  else if (section === "usage") renderUsageView(body, state, handlers);
+  else if (section === "system") renderSystemView(body, state, handlers);
+  else if (section === "memory") renderMemoryView(body, state, handlers);
+  else if (section === "appearance") renderAppearanceView(body, state, handlers);
+  else renderModelView(body, state, handlers);
 }

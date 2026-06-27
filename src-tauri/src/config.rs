@@ -21,6 +21,16 @@ pub struct LlmSettings {
     /// condition (CPU or memory above the alert threshold).
     #[serde(default)]
     pub notify_on_system_alert: bool,
+    /// Sample the foreground window in the background and accumulate per-app
+    /// usage time (the desktop analogue of mobile "screen time"). On by
+    /// default; the System view exposes a toggle.
+    #[serde(default = "default_track_app_usage")]
+    pub track_app_usage: bool,
+    /// When the user has been idle (no input) for at least this many minutes,
+    /// the sampler skips crediting the foreground app. 0 disables idle
+    /// filtering. Defaults to 5.
+    #[serde(default = "default_app_usage_idle_minutes")]
+    pub app_usage_idle_minutes: u64,
 }
 
 impl Default for LlmSettings {
@@ -36,6 +46,8 @@ impl Default for LlmSettings {
             auto_system_check_interval_minutes: default_auto_system_check_interval_minutes(),
             notify_on_reply: false,
             notify_on_system_alert: false,
+            track_app_usage: default_track_app_usage(),
+            app_usage_idle_minutes: default_app_usage_idle_minutes(),
         }
     }
 }
@@ -61,6 +73,9 @@ impl LlmSettings {
         if !(1..=120).contains(&self.auto_system_check_interval_minutes) {
             return Err("自动检查间隔必须在 1 到 120 分钟之间".to_string());
         }
+        if !(0..=240).contains(&self.app_usage_idle_minutes) {
+            return Err("使用时长空闲阈值必须在 0 到 240 分钟之间".to_string());
+        }
         Ok(())
     }
 }
@@ -78,6 +93,8 @@ pub struct LlmSettingsStatus {
     pub auto_system_check_interval_minutes: u64,
     pub notify_on_reply: bool,
     pub notify_on_system_alert: bool,
+    pub track_app_usage: bool,
+    pub app_usage_idle_minutes: u64,
     pub settings_path: String,
 }
 
@@ -98,6 +115,8 @@ impl LlmSettingsStatus {
             auto_system_check_interval_minutes: settings.auto_system_check_interval_minutes,
             notify_on_reply: settings.notify_on_reply,
             notify_on_system_alert: settings.notify_on_system_alert,
+            track_app_usage: settings.track_app_usage,
+            app_usage_idle_minutes: settings.app_usage_idle_minutes,
             settings_path: settings_path.display().to_string(),
         }
     }
@@ -117,6 +136,10 @@ pub struct LlmSettingsInput {
     pub auto_system_check_interval_minutes: u64,
     pub notify_on_reply: bool,
     pub notify_on_system_alert: bool,
+    #[serde(default = "default_track_app_usage")]
+    pub track_app_usage: bool,
+    #[serde(default = "default_app_usage_idle_minutes")]
+    pub app_usage_idle_minutes: u64,
 }
 
 impl LlmSettingsInput {
@@ -130,6 +153,8 @@ impl LlmSettingsInput {
         current.auto_system_check_interval_minutes = self.auto_system_check_interval_minutes;
         current.notify_on_reply = self.notify_on_reply;
         current.notify_on_system_alert = self.notify_on_system_alert;
+        current.track_app_usage = self.track_app_usage;
+        current.app_usage_idle_minutes = self.app_usage_idle_minutes;
 
         if self.clear_api_key {
             current.api_key = None;
@@ -144,6 +169,14 @@ impl LlmSettingsInput {
 
 fn default_auto_system_check_interval_minutes() -> u64 {
     10
+}
+
+fn default_track_app_usage() -> bool {
+    true
+}
+
+fn default_app_usage_idle_minutes() -> u64 {
+    5
 }
 
 #[cfg(test)]
@@ -209,6 +242,22 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_out_of_range_idle_minutes() {
+        let mut s = defaults();
+        s.app_usage_idle_minutes = 0;
+        assert!(s.validate_public_fields().is_ok(), "0 disables idle filter");
+        s.app_usage_idle_minutes = 241;
+        assert!(s.validate_public_fields().is_err());
+    }
+
+    #[test]
+    fn defaults_track_app_usage_enabled() {
+        let s = defaults();
+        assert!(s.track_app_usage, "usage tracking defaults on");
+        assert_eq!(s.app_usage_idle_minutes, 5);
+    }
+
+    #[test]
     fn merge_input_clears_api_key_when_requested() {
         let mut s = defaults();
         s.api_key = Some("secret".into());
@@ -224,6 +273,8 @@ mod tests {
             auto_system_check_interval_minutes: 10,
             notify_on_reply: false,
             notify_on_system_alert: false,
+            track_app_usage: true,
+            app_usage_idle_minutes: 5,
         };
         input.merge_into(&mut s);
         assert!(s.api_key.is_none(), "clear_api_key should win over a provided key");
@@ -245,6 +296,8 @@ mod tests {
             auto_system_check_interval_minutes: 10,
             notify_on_reply: false,
             notify_on_system_alert: false,
+            track_app_usage: true,
+            app_usage_idle_minutes: 5,
         };
         input.merge_into(&mut s);
         assert_eq!(s.api_key.as_deref(), Some("keepme"));

@@ -141,22 +141,28 @@ function renderEmptyState(handlers) {
   // Quick-start chips wired to real behavior (ui-plan §8.7): no fake buttons —
   // each either sends a real prompt or navigates to a real panel.
   const chips = [
-    { label: "检查系统状态", action: () => handlers.onSend?.("请检查一下当前的系统状态。") },
-    { label: "查看工具", action: () => handlers.onGoSettings?.("tools") },
-    { label: "查看 token 使用", action: () => handlers.onGoSettings?.("stats") },
+    { label: "检查系统状态", desc: "读取 CPU、内存和高占用进程", action: () => handlers.onSend?.("请检查一下当前的系统状态。") },
+    { label: "管理工具", desc: "启用本地、HTTP 或内置能力", action: () => handlers.onGoSettings?.("tools") },
+    { label: "查看用量", desc: "追踪 token、应用时长和番茄钟", action: () => handlers.onGoSettings?.("stats") },
   ];
   const chipsHtml = handlers.onSend
-    ? `<div class="empty-chips">${chips
+    ? `<div class="chat-empty-actions">${chips
         .map(
           (chip, idx) =>
-            `<button class="empty-chip" type="button" data-empty-chip="${idx}">${escapeHtml(chip.label)}</button>`,
+            `<button class="chat-empty-action" type="button" data-empty-chip="${idx}">
+              <strong>${escapeHtml(chip.label)}</strong>
+              <span>${escapeHtml(chip.desc)}</span>
+            </button>`,
         )
         .join("")}</div>`
     : "";
   return `
-    <div class="empty-state" data-role="empty-state">
-      <strong>iPet 在这里</strong>
-      <span>问它问题，或让它检查系统状态。</span>
+    <div class="empty-state chat-empty-state" data-role="empty-state">
+      <div class="chat-empty-mark" aria-hidden="true">iP</div>
+      <div class="chat-empty-copy">
+        <strong>今天要处理什么？</strong>
+        <span>直接输入任务，或者从下面选一个常用工作流开始。</span>
+      </div>
       ${chipsHtml}
     </div>
   `;
@@ -199,6 +205,7 @@ function renderMessage(message, _isLast) {
           ${content}
         </div>
       </div>
+      ${role === "user" ? `<div class="message-avatar message-avatar-user">${avatar}</div>` : ""}
     </div>
   `;
 }

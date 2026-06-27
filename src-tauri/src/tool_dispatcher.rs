@@ -7,11 +7,12 @@ use futures_util::StreamExt;
 use ipet_tool_get_system_status::SystemMonitor;
 use ipet_tool_scan_disk::{self as disk_scanner, DiskScanRequest};
 use reqwest::Method;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::{Emitter, Window};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
@@ -51,10 +52,27 @@ pub struct ToolDispatcher {
     system: Arc<Mutex<SystemMonitor>>,
     storage: Arc<Storage>,
     http: reqwest::Client,
+    window: Option<Window>,
 }
 
 impl ToolDispatcher {
     pub fn new(system: Arc<Mutex<SystemMonitor>>, storage: Arc<Storage>) -> Self {
+        Self::build(system, storage, None)
+    }
+
+    pub fn with_window(
+        system: Arc<Mutex<SystemMonitor>>,
+        storage: Arc<Storage>,
+        window: Window,
+    ) -> Self {
+        Self::build(system, storage, Some(window))
+    }
+
+    fn build(
+        system: Arc<Mutex<SystemMonitor>>,
+        storage: Arc<Storage>,
+        window: Option<Window>,
+    ) -> Self {
         // A dedicated client for tool HTTP traffic with conservative timeouts
         // and a redirect cap. Falls back to the default client if the
         // builder rejects our config (which it never does for these flags).
@@ -67,6 +85,7 @@ impl ToolDispatcher {
             system,
             storage,
             http,
+            window,
         }
     }
 
@@ -257,6 +276,41 @@ impl ToolDispatcher {
                     .map_err(|err| err.to_string())
                 })
                 .await
+            }
+            // Foreground-app usage stats (the desktop "screen time"). Reads the
+            // same `app_usage` rows the background sampler writes; lives in the
+            // dispatcher (not desktop_tools) because it needs Storage, like the
+            // memory tools above.
+            "app_usage_stats" => {
+                let args = serde_json::from_str::<AppUsageStatsArgs>(arguments)
+                    .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                let storage = self.storage.clone();
+                run_blocking(move || {
+                    let range = args.range.as_deref().unwrap_or("today");
+                    let limit = args.limit.unwrap_or(15).clamp(1, 100);
+                    let stats = storage
+                        .app_usage_stats(range, limit)
+                        .map_err(|e| e.to_string())?;
+                    serde_json::to_string(&stats).map_err(|err| err.to_string())
+                })
+                .await
+            }
+            "control_pomodoro" => {
+                let args = serde_json::from_str::<PomodoroControlArgs>(arguments)
+                    .map_err(|error| AppError::InvalidInput(error.to_string()))?;
+                validate_pomodoro_args(&args)?;
+                let window = self.window.as_ref().ok_or_else(|| {
+                    AppError::InvalidInput("番茄钟控制需要可用的应用窗口".to_string())
+                })?;
+                window
+                    .emit("pomodoro-control", &args)
+                    .map_err(|error| AppError::Model(error.to_string()))?;
+                Ok(json!({
+                    "ok": true,
+                    "action": args.action,
+                    "message": "番茄钟指令已发送到 iPet 界面"
+                })
+                .to_string())
             }
             other => Err(AppError::InvalidInput(format!("未知内置工具: {other}"))),
         }
@@ -515,6 +569,61 @@ struct MemorySearchArgs {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppUsageStatsArgs {
+    #[serde(default)]
+    range: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PomodoroControlArgs {
+    action: String,
+    #[serde(default)]
+    work_minutes: Option<u32>,
+    #[serde(default)]
+    break_minutes: Option<u32>,
+    #[serde(default)]
+    long_break_minutes: Option<u32>,
+    #[serde(default)]
+    long_break_every: Option<u32>,
+    #[serde(default)]
+    auto_start_break: Option<bool>,
+    #[serde(default)]
+    auto_start_work: Option<bool>,
+}
+
+fn validate_pomodoro_args(args: &PomodoroControlArgs) -> AppResult<()> {
+    match args.action.as_str() {
+        "start" | "pause" | "resume" | "toggle" | "skip" | "reset" | "configure" => {}
+        other => {
+            return Err(AppError::InvalidInput(format!(
+                "不支持的番茄钟动作: {other}"
+            )));
+        }
+    }
+
+    validate_optional_range("workMinutes", args.work_minutes, 1, 90)?;
+    validate_optional_range("breakMinutes", args.break_minutes, 1, 60)?;
+    validate_optional_range("longBreakMinutes", args.long_break_minutes, 1, 60)?;
+    validate_optional_range("longBreakEvery", args.long_break_every, 2, 12)?;
+    Ok(())
+}
+
+fn validate_optional_range(name: &str, value: Option<u32>, min: u32, max: u32) -> AppResult<()> {
+    if let Some(value) = value {
+        if !(min..=max).contains(&value) {
+            return Err(AppError::InvalidInput(format!(
+                "{name} 必须在 {min} 到 {max} 之间"
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,6 +654,42 @@ mod tests {
         } else {
             ("printf".to_string(), vec!["ok".to_string()])
         }
+    }
+
+    #[test]
+    fn pomodoro_args_validate_action_and_ranges() {
+        let valid = PomodoroControlArgs {
+            action: "configure".to_string(),
+            work_minutes: Some(25),
+            break_minutes: Some(5),
+            long_break_minutes: Some(15),
+            long_break_every: Some(4),
+            auto_start_break: Some(true),
+            auto_start_work: Some(false),
+        };
+        assert!(validate_pomodoro_args(&valid).is_ok());
+
+        let invalid_action = PomodoroControlArgs {
+            action: "launch".to_string(),
+            work_minutes: None,
+            break_minutes: None,
+            long_break_minutes: None,
+            long_break_every: None,
+            auto_start_break: None,
+            auto_start_work: None,
+        };
+        assert!(validate_pomodoro_args(&invalid_action).is_err());
+
+        let invalid_range = PomodoroControlArgs {
+            action: "configure".to_string(),
+            work_minutes: Some(120),
+            break_minutes: None,
+            long_break_minutes: None,
+            long_break_every: None,
+            auto_start_break: None,
+            auto_start_work: None,
+        };
+        assert!(validate_pomodoro_args(&invalid_range).is_err());
     }
 
     #[tokio::test]

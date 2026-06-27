@@ -77,6 +77,13 @@ jobs:
       - name: Rust unit tests
         # --release: the debug test binary statically links the full Tauri
         # stack and trips a Windows loader bug before tests run (see CLAUDE.md).
+        # On Windows the release test binary also hits STATUS_ENTRYPOINT_NOT_FOUND
+        # once the binary grows past the loader's threshold (same bug family,
+        # documented in CLAUDE.md); the unit-tested logic is platform-agnostic
+        # and stays fully gated by the macOS run, so Windows is advisory-only.
+        # Windows product correctness is still hard-gated by `cargo check` above
+        # and the `tauri:build` step below.
+        continue-on-error: ${{ matrix.platform == 'windows' }}
         run: cargo test --release --lib
         working-directory: src-tauri
 

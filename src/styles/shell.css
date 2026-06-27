@@ -29,10 +29,10 @@
   z-index: -2;
   background:
     radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.8), transparent 58%),
-    linear-gradient(135deg, rgba(162, 210, 255, 0.28), transparent 40%),
-    linear-gradient(315deg, rgba(200, 180, 255, 0.18), transparent 46%),
+    linear-gradient(135deg, rgba(0, 113, 227, 0.12), transparent 42%),
+    linear-gradient(315deg, rgba(255, 255, 255, 0.34), transparent 50%),
     var(--color-canvas);
-  filter: blur(36px);
+  filter: blur(30px);
   transform: scale(1.08);
   animation: ambient-flow 18s var(--ease-spring) infinite alternate;
 }
@@ -143,27 +143,172 @@
 .app-shell[data-view="capsule"] .pet-wrap::before {
   display: none;
 }
-.app-shell[data-view="capsule"] .pet-stage {
-  width: 148px;
-  height: 166px;
-}
 
-/* Talk header — small avatar + name + live state, replacing the big pet stage. */
-.talk-header {
+/* The glass pill — a small translucent floating status chip that replaces the
+   old pet puck. Mostly transparent so the desktop shows through; a soft blur
+   + hairline keeps it readable over any wallpaper. Draggable via the capsule
+   wrapper, click (non-drag) expands. */
+.capsule-pill {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-hairline-on-glass);
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 34px;
+  max-width: 240px;
+  border-radius: 999px;
+  border: 1px solid var(--color-hairline-on-glass);
   background: var(--color-surface);
   backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
   -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(170%);
+  box-shadow: var(--platform-card-shadow);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  cursor: grab;
 }
+.capsule-pill:active {
+  cursor: grabbing;
+}
+.capsule-pill-text {
+  pointer-events: none;
+}
+
+/* Talk dashboard — identity, session, and focus timer in one workspace band. */
+.talk-dashboard {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.25fr) minmax(210px, 1fr) minmax(220px, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-hairline-on-glass);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 72%),
+    var(--color-surface-muted);
+  backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
+}
+
+.talk-identity-card,
+.talk-session-card,
+.talk-pomodoro {
+  min-width: 0;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.055);
+}
+
+.talk-identity-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.talk-session-card,
+.talk-pomodoro {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+}
+
+.talk-card-head {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.talk-card-head > span,
+.talk-kicker {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.talk-card-head > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--text-subtitle);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pomodoro-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+}
+
+.pomodoro-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.pomodoro-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.pomodoro-phase {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pomodoro-count {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.pomodoro-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pomodoro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-hairline-on-glass);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.pomodoro-btn:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+}
+.pomodoro-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .talk-avatar {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-card);
   display: grid;
   place-items: center;
   background:
@@ -174,8 +319,8 @@
     0 4px 12px rgba(0, 113, 227, 0.18);
 }
 .talk-avatar-mark {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--color-accent);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
@@ -183,12 +328,12 @@
 .talk-meta {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 .talk-meta strong {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-title);
+  font-weight: 800;
   color: var(--color-text);
 }
 .talk-state {
@@ -208,6 +353,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   margin-left: auto;
   flex: 0 0 auto;
   padding: 3px;
@@ -216,11 +362,24 @@
   backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--platform-material-blur)) saturate(160%);
 }
+
+.talk-session-card .session-switcher {
+  width: 100%;
+  margin-left: 0;
+}
+
+.talk-session-card .session-select {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+}
 .session-select {
   /* appearance:none lets us draw the pill + chevron ourselves; the dropdown
      list itself is still the native OS menu. */
   appearance: none;
   -webkit-appearance: none;
+  width: clamp(96px, 22vw, 170px);
+  min-width: 0;
   max-width: 170px;
   height: 26px;
   font-size: 12px;

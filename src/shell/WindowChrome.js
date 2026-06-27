@@ -27,7 +27,7 @@ export function renderWindowChrome(ctx) {
       <div class="window-actions">
         <button class="window-button" data-chrome="control" title="${inControl ? "返回对话" : "控制中心"}" aria-label="${inControl ? "返回对话" : "控制中心"}">${icon(inControl ? "compact" : "settings", { label: inControl ? "返回对话" : "控制中心" })}</button>
         <button class="window-button ${state.alwaysOnTop ? "active" : ""}" data-chrome="pin" title="${state.alwaysOnTop ? "取消置顶" : "窗口置顶"}" aria-label="${state.alwaysOnTop ? "取消置顶" : "窗口置顶"}" aria-pressed="${state.alwaysOnTop ? "true" : "false"}">${icon("pin", { label: state.alwaysOnTop ? "取消置顶" : "窗口置顶" })}</button>
-        <button class="window-button" data-chrome="compact" title="收起为宠物" aria-label="收起为宠物">${icon("compact", { label: "收起为宠物" })}</button>
+        <button class="window-button" data-chrome="compact" title="收起为小窗" aria-label="收起为小窗">${icon("compact", { label: "收起为小窗" })}</button>
         <button class="window-button" data-chrome="minimize" title="最小化" aria-label="最小化">${icon("minimize", { label: "最小化" })}</button>
         <button class="window-button danger" data-chrome="close" title="关闭" aria-label="关闭">${icon("close", { label: "关闭" })}</button>
       </div>

@@ -4,7 +4,7 @@ import { loadTheme, setThemePreference } from "./app/theme.js";
 import { createOverlayController } from "./app/overlay.js";
 import { createPetCharacter } from "./components/PetCharacter/PetCharacter.js";
 import { renderChat, updateChatStreaming } from "./components/ChatBubble/ChatBubble.js";
-import { renderAppShell, capsuleStatusText } from "./shell/AppShell.js";
+import { renderAppShell, capsulePillText } from "./shell/AppShell.js";
 import { talkActivityText } from "./shell/WindowChrome.js";
 import { escapeHtml } from "./utils/markdown.js";
 import "./styles.css";
@@ -46,6 +46,12 @@ const ctx = {
     onSetDensity: setDensity,
     onSetReduceMotion: setReduceMotion,
     onRefreshStats: refreshStats,
+    onRefreshAppUsage: refreshAppUsage,
+    onSetAppUsageRange: setAppUsageRange,
+    onPomodoroToggle: pomodoroToggle,
+    onPomodoroSkip: pomodoroSkip,
+    onPomodoroReset: pomodoroReset,
+    onSavePomodoro: savePomodoroFromForm,
     onSend: sendMessage,
     onStop: stopChat,
     onGoSettings: (section) => setControlSection(section === "stats" ? "usage" : section),
@@ -73,10 +79,14 @@ async function bootstrap() {
   applyReduceMotion();
   await loadTheme({ state, invoke });
   await bindChatEvents();
+  await bindPomodoroToolEvents();
   await loadInitialData();
   await maybeOpenPersonaOnboarding();
   render();
   scheduleAutoSystemCheck({ runNow: true });
+  // Pomodoro 1s tick — patches only its own DOM nodes (no full re-render) so a
+  // running timer doesn't churn the talk workspace while you're chatting.
+  state.pomodoroTimer = window.setInterval(tickPomodoro, 1000);
 }
 
 // Esc closes the active dialog, or — with no dialog open — leaves the Control
@@ -158,6 +168,21 @@ async function bindChatEvents() {
   });
 }
 
+async function bindPomodoroToolEvents() {
+  await listen("pomodoro-control", async (event) => {
+    const payload = event?.payload || {};
+    try {
+      const result = await applyPomodoroToolCommand(payload);
+      state.chatStatus = result.message;
+      showToast(result.message, "success");
+    } catch (error) {
+      state.chatStatus = String(error);
+      showToast(String(error), "error");
+    }
+    render();
+  });
+}
+
 async function loadInitialData() {
   await Promise.allSettled([
     loadSettings(),
@@ -165,7 +190,14 @@ async function loadInitialData() {
     loadMessages(),
     loadTools(),
     loadStats(),
+    loadPomodoroSettings(),
+    loadPomodoroStats(),
   ]);
+  // Seed today's completed-work count from history so the counter survives a
+  // restart mid-session (the in-memory count resets on reload otherwise).
+  if (state.pomodoroStats?.totalWork != null) {
+    state.pomodoro.completedWorkCount = state.pomodoroStats.totalWork;
+  }
 }
 
 async function loadSettings() {
@@ -182,6 +214,8 @@ async function loadSettings() {
     systemPrompt: state.settings.systemPrompt,
     notifyOnReply: Boolean(state.settings.notifyOnReply),
     notifyOnSystemAlert: Boolean(state.settings.notifyOnSystemAlert),
+    trackAppUsage: Boolean(state.settings.trackAppUsage ?? true),
+    appUsageIdleMinutes: Number(state.settings.appUsageIdleMinutes ?? 5),
   };
   // Derive the provider preset from the saved Base URL so the dropdown shows
   // the matching entry on load (custom when it doesn't match any preset).
@@ -385,6 +419,53 @@ async function loadStats() {
   state.stats = await invoke("get_token_stats");
 }
 
+async function loadAppUsage() {
+  state.appUsage = await invoke("get_app_usage", {
+    range: state.appUsageRange,
+    limit: 15,
+  });
+}
+
+async function refreshAppUsage() {
+  try {
+    await loadAppUsage();
+    state.appUsageStatus = "已刷新";
+  } catch (error) {
+    state.appUsageStatus = String(error);
+    showToast(`刷新失败：${String(error)}`, "error");
+  }
+  render();
+}
+
+async function setAppUsageRange(range) {
+  state.appUsageRange = range;
+  try {
+    await loadAppUsage();
+    await loadPomodoroStats();
+    state.appUsageStatus = "";
+  } catch (error) {
+    state.appUsageStatus = String(error);
+  }
+  render();
+}
+
+async function loadPomodoroStats() {
+  state.pomodoroStats = await invoke("get_pomodoro_stats", {
+    range: state.appUsageRange,
+  });
+}
+
+/// Fire-and-forget: log a completed session server-side so it survives restarts
+/// and shows up in the Usage view. Failures are non-fatal (the timer keeps
+/// running); we just warn so it's debuggable.
+async function recordPomodoroCompletion(kind) {
+  try {
+    await invoke("record_pomodoro_session", { kind });
+  } catch (error) {
+    console.warn("record pomodoro session failed:", error);
+  }
+}
+
 async function refreshStatsSilently() {
   try {
     await loadStats();
@@ -398,7 +479,8 @@ function render() {
   renderAppShell(root, ctx);
 
   if (state.viewMode === "capsule") {
-    pet.setLine(capsuleStatusText(state));
+    const pill = document.querySelector('[data-role="capsule-pill-text"]');
+    if (pill) pill.textContent = capsulePillText(state);
     renderOverlay();
     return;
   }
@@ -504,7 +586,18 @@ async function setControlSection(section) {
     await ensureControlSidebarWidth();
   }
   if (section === "tools") await loadToolsSafely();
-  if (section === "usage") await refreshStatsSilently();
+  if (section === "usage") {
+    await refreshStatsSilently();
+    // App-usage rows are written by the 15s background sampler; refresh on
+    // entry so the view isn't stale. Pomodoro stats are persisted server-side;
+    // reload both on entry. Failures are non-fatal (sample = null).
+    try {
+      await loadAppUsage();
+      await loadPomodoroStats();
+    } catch (error) {
+      state.appUsageStatus = String(error);
+    }
+  }
   if (section === "memory") await loadMemoriesSafely();
   render();
 }
@@ -654,6 +747,8 @@ async function saveSettings(partial = {}) {
       partial.autoSystemCheckIntervalMinutes ?? base.autoSystemCheckIntervalMinutes,
     notifyOnReply: partial.notifyOnReply ?? base.notifyOnReply ?? false,
     notifyOnSystemAlert: partial.notifyOnSystemAlert ?? base.notifyOnSystemAlert ?? false,
+    trackAppUsage: partial.trackAppUsage ?? base.trackAppUsage ?? true,
+    appUsageIdleMinutes: partial.appUsageIdleMinutes ?? base.appUsageIdleMinutes ?? 5,
   };
 
   // Validate only the fields this view is responsible for (ui-plan §9.5).
@@ -687,6 +782,8 @@ async function saveSettings(partial = {}) {
       systemPrompt: state.settings.systemPrompt,
       notifyOnReply: Boolean(state.settings.notifyOnReply),
       notifyOnSystemAlert: Boolean(state.settings.notifyOnSystemAlert),
+      trackAppUsage: Boolean(state.settings.trackAppUsage ?? true),
+      appUsageIdleMinutes: Number(state.settings.appUsageIdleMinutes ?? 5),
     };
     state.notifyOnReply = state.settings.notifyOnReply;
     state.notifyOnSystemAlert = state.settings.notifyOnSystemAlert;
@@ -1072,9 +1169,10 @@ function updateThinkingDisplay() {
     }
   }
 
-  // Keep the capsule line + talk/chrome status in sync without a full render
+  // Keep the capsule pill + talk/chrome status in sync without a full render
   // (ref-plan §11.3 — status changes patch only their own elements).
-  pet.setLine(capsuleStatusText(state));
+  const pill = document.querySelector('[data-role="capsule-pill-text"]');
+  if (pill) pill.textContent = capsulePillText(state);
   const talkState = document.querySelector('[data-role="talk-state"]');
   if (talkState) talkState.textContent = talkActivityText(state);
   const chromeActivity = document.querySelector('[data-role="chrome-activity"]');
@@ -1156,4 +1254,241 @@ function formatClockTime(date) {
 
 function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, Number(value) || min));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pomodoro — standard 25/5 cycle, OS notifications on phase transitions,     */
+/* adjustable durations persisted via the `ipet:pomodoro` preference.         */
+/*                                                                            */
+/* The 1s tick (started in bootstrap) only decrements when `running` and      */
+/* patches just the pomodoro + capsule-pill nodes (ref-plan §11.3 — never a   */
+/* full re-render per second). Phase transitions do call render().            */
+/* -------------------------------------------------------------------------- */
+
+async function loadPomodoroSettings() {
+  try {
+    const raw = await invoke("get_preference", { key: "ipet:pomodoro" });
+    if (raw) Object.assign(state.pomodoro, JSON.parse(raw));
+  } catch (error) {
+    console.warn("pomodoro settings load failed:", error);
+  }
+  // Idle on first load → seed the countdown from the configured work length.
+  if (state.pomodoro.phase === "idle") {
+    state.pomodoro.totalSec = state.pomodoro.workMinutes * 60;
+    state.pomodoro.remainingSec = state.pomodoro.totalSec;
+  }
+}
+
+async function persistPomodoroSettings() {
+  const p = state.pomodoro;
+  const cfg = {
+    workMinutes: p.workMinutes,
+    breakMinutes: p.breakMinutes,
+    longBreakMinutes: p.longBreakMinutes,
+    longBreakEvery: p.longBreakEvery,
+    autoStartBreak: p.autoStartBreak,
+    autoStartWork: p.autoStartWork,
+  };
+  try {
+    await invoke("set_preference", { key: "ipet:pomodoro", value: JSON.stringify(cfg) });
+  } catch (error) {
+    console.warn("pomodoro settings save failed:", error);
+  }
+}
+
+async function applyPomodoroToolCommand(payload) {
+  const action = String(payload.action || "").toLowerCase();
+  const settingsChanged = applyPomodoroToolSettings(payload);
+  if (settingsChanged) await persistPomodoroSettings();
+
+  const p = state.pomodoro;
+  if (action === "configure") {
+    if (p.phase === "idle") {
+      p.totalSec = p.workMinutes * 60;
+      p.remainingSec = p.totalSec;
+    }
+    return { message: "番茄钟设置已更新" };
+  }
+
+  if (action === "start" || action === "resume") {
+    if (p.phase === "idle") startPomodoroPhase("work");
+    p.running = true;
+    return { message: action === "start" ? "番茄钟已开始专注" : "番茄钟已继续" };
+  }
+
+  if (action === "pause") {
+    if (p.phase !== "idle") p.running = false;
+    return { message: p.phase === "idle" ? "番茄钟尚未开始" : "番茄钟已暂停" };
+  }
+
+  if (action === "toggle") {
+    if (p.phase === "idle") {
+      startPomodoroPhase("work");
+      p.running = true;
+      return { message: "番茄钟已开始专注" };
+    }
+    p.running = !p.running;
+    return { message: p.running ? "番茄钟已继续" : "番茄钟已暂停" };
+  }
+
+  if (action === "skip") {
+    if (p.phase === "idle") return { message: "番茄钟尚未开始，无法跳过" };
+    advancePomodoroPhase(true);
+    return { message: "已跳过当前番茄钟时段" };
+  }
+
+  if (action === "reset") {
+    p.phase = "idle";
+    p.running = false;
+    p.totalSec = p.workMinutes * 60;
+    p.remainingSec = p.totalSec;
+    return { message: "番茄钟已重置" };
+  }
+
+  throw new Error(`不支持的番茄钟动作：${action || "(空)"}`);
+}
+
+function applyPomodoroToolSettings(payload) {
+  const p = state.pomodoro;
+  let changed = false;
+  const setNumber = (key, min, max) => {
+    if (payload[key] == null) return;
+    p[key] = clampNumber(payload[key], min, max);
+    changed = true;
+  };
+  setNumber("workMinutes", 1, 90);
+  setNumber("breakMinutes", 1, 60);
+  setNumber("longBreakMinutes", 1, 60);
+  setNumber("longBreakEvery", 2, 12);
+  if (payload.autoStartBreak != null) {
+    p.autoStartBreak = Boolean(payload.autoStartBreak);
+    changed = true;
+  }
+  if (payload.autoStartWork != null) {
+    p.autoStartWork = Boolean(payload.autoStartWork);
+    changed = true;
+  }
+  return changed;
+}
+
+function pomodoroToggle() {
+  const p = state.pomodoro;
+  if (p.phase === "idle") {
+    startPomodoroPhase("work");
+    p.running = true;
+  } else {
+    p.running = !p.running;
+  }
+  render();
+}
+
+function pomodoroSkip() {
+  if (state.pomodoro.phase === "idle") return;
+  advancePomodoroPhase(true);
+}
+
+function pomodoroReset() {
+  const p = state.pomodoro;
+  p.phase = "idle";
+  p.running = false;
+  p.totalSec = p.workMinutes * 60;
+  p.remainingSec = p.totalSec;
+  render();
+}
+
+/// Move to the next phase. `skipped` true means the user jumped past the
+/// current phase (no completed-pomodoro credit, no auto-start override).
+function advancePomodoroPhase(skipped) {
+  const p = state.pomodoro;
+  if (p.phase === "work") {
+    if (!skipped) {
+      p.completedWorkCount += 1;
+      // Persist the completed work session so the Usage view can show history.
+      recordPomodoroCompletion("work");
+    }
+    sendNotificationSafe(
+      "番茄钟 · 专注完成",
+      skipped ? "已跳过专注时段，去休息一下吧" : "专注完成，休息一下 ☕",
+    );
+    startPomodoroPhase("break");
+    p.running = p.autoStartBreak;
+  } else if (p.phase === "break") {
+    if (!skipped) recordPomodoroCompletion("break");
+    sendNotificationSafe("番茄钟 · 休息结束", "开始下一个番茄 ☀️");
+    startPomodoroPhase("work");
+    p.running = p.autoStartWork;
+  }
+  render();
+}
+
+/// Configure `phase`'s duration. Long break kicks in every `longBreakEvery`
+/// completed work sessions (e.g. every 4th).
+function startPomodoroPhase(phase) {
+  const p = state.pomodoro;
+  p.phase = phase;
+  const minutes =
+    phase === "work"
+      ? p.workMinutes
+      : p.completedWorkCount % p.longBreakEvery === 0
+        ? p.longBreakMinutes
+        : p.breakMinutes;
+  p.totalSec = Math.max(1, minutes) * 60;
+  p.remainingSec = p.totalSec;
+}
+
+function tickPomodoro() {
+  const p = state.pomodoro;
+  if (!p.running) return;
+  p.remainingSec = Math.max(0, p.remainingSec - 1);
+  if (p.remainingSec === 0) {
+    advancePomodoroPhase(false);
+  } else {
+    updatePomodoroDisplay();
+  }
+}
+
+/// Patch only the pomodoro + capsule-pill nodes — a per-second full re-render
+/// would rebuild the chat shell and fight the streaming patcher.
+function updatePomodoroDisplay() {
+  const p = state.pomodoro;
+  const time = `🍅 ${formatPomodoroClock(p.remainingSec)}`;
+  const timeEl = document.querySelector('[data-role="pomodoro-time"]');
+  if (timeEl) timeEl.textContent = time;
+  const phaseEl = document.querySelector('[data-role="pomodoro-phase"]');
+  if (phaseEl) phaseEl.textContent = pomodoroPhaseLabel(p);
+  const pill = document.querySelector('[data-role="capsule-pill-text"]');
+  if (pill) pill.textContent = capsulePillText(state);
+}
+
+function pomodoroPhaseLabel(p) {
+  if (!p || p.phase === "idle") return "就绪";
+  if (p.phase === "work") return p.running ? "专注中" : "专注·暂停";
+  return p.running ? "休息中" : "休息·暂停";
+}
+
+function formatPomodoroClock(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+/// Save the durations form from the System view. Updates state, persists, and —
+/// if idle — re-seeds the countdown so the new work length shows immediately.
+async function savePomodoroFromForm(partial) {
+  const p = state.pomodoro;
+  if ("workMinutes" in partial) p.workMinutes = clampNumber(partial.workMinutes, 1, 90);
+  if ("breakMinutes" in partial) p.breakMinutes = clampNumber(partial.breakMinutes, 1, 60);
+  if ("longBreakMinutes" in partial)
+    p.longBreakMinutes = clampNumber(partial.longBreakMinutes, 1, 60);
+  if ("longBreakEvery" in partial) p.longBreakEvery = clampNumber(partial.longBreakEvery, 2, 12);
+  if ("autoStartBreak" in partial) p.autoStartBreak = Boolean(partial.autoStartBreak);
+  if ("autoStartWork" in partial) p.autoStartWork = Boolean(partial.autoStartWork);
+  if (p.phase === "idle") {
+    p.totalSec = p.workMinutes * 60;
+    p.remainingSec = p.totalSec;
+  }
+  await persistPomodoroSettings();
+  showToast("番茄钟设置已保存", "success");
+  render();
 }

@@ -8,6 +8,7 @@ mod storage;
 mod testutil;
 mod tool_dispatcher;
 mod tool_package;
+mod usage_tracker;
 
 use app_error::{public_error, AppError, AppResult};
 use config::{LlmSettingsInput, LlmSettingsStatus};
@@ -17,7 +18,10 @@ use llm_client::{ChatRequest, ChatTurnResult, LlmClient};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
-use storage::{ChatRecord, ChatSession, Memory, Storage, TokenUsageStats, ToolConfig, ToolConfigInput};
+use storage::{
+    AppUsageStats, ChatRecord, ChatSession, Memory, PomodoroStats, Storage, TokenUsageStats,
+    ToolConfig, ToolConfigInput,
+};
 use tauri::{Emitter, LogicalSize, Manager, State, Window};
 use tokio::sync::Mutex;
 use tool_dispatcher::ToolDispatcher;
@@ -326,6 +330,47 @@ fn get_token_stats(state: State<'_, AppState>) -> Result<TokenUsageStats, String
     state.storage.token_stats().map_err(public_error)
 }
 
+/// Aggregate foreground usage time for the Usage view. `range` is `today` /
+/// `7d` / `30d`; defaults to `today`. Reads the same `app_usage` rows the
+/// background sampler writes and the `app_usage_stats` tool queries.
+#[tauri::command]
+fn get_app_usage(
+    range: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<AppUsageStats, String> {
+    let range = range.as_deref().unwrap_or("today");
+    let limit = limit.unwrap_or(15).clamp(1, 100);
+    state
+        .storage
+        .app_usage_stats(range, limit)
+        .map_err(public_error)
+}
+
+/// Record one completed pomodoro session (`kind` = `work` / `break`). Called by
+/// the frontend on a non-skipped phase transition; ignored on failure so a DB
+/// hiccup never blocks the timer.
+#[tauri::command]
+fn record_pomodoro_session(
+    kind: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .storage
+        .record_pomodoro_session(&kind)
+        .map_err(public_error)
+}
+
+/// Aggregate completed pomodoro sessions for the Usage view.
+#[tauri::command]
+fn get_pomodoro_stats(
+    range: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<PomodoroStats, String> {
+    let range = range.as_deref().unwrap_or("today");
+    state.storage.pomodoro_stats(range).map_err(public_error)
+}
+
 /// Fetch the model list from the configured provider's `/models` endpoint.
 /// Works against any OpenAI-compatible `GET {base_url}/models` (returns
 /// `{ data: [{ id: "..." }, ...] }`). Used by the Model view's "刷新模型列表"
@@ -429,9 +474,12 @@ fn set_compact_window(window: Window, enabled: bool) -> Result<(), String> {
     // The expanded (talk/control) minimum matches the Control Center default
     // size: 720x720 keeps the sidebar nav visible and prevents the user from
     // shrinking the window below the layout's responsive breakpoint. Capsule
-    // mode temporarily relaxes the minimum so the 148x166 puck can be set.
+    // mode temporarily relaxes the minimum so the glass-pill size can be set.
     const EXPANDED_MIN: (f64, f64) = (720.0, 720.0);
-    const CAPSULE_MIN: (f64, f64) = (120.0, 140.0);
+    // The capsule is now a wide, short translucent pill rather than the old
+    // 148x166 pet puck; the min lets it shrink to a one-line status pill.
+    const CAPSULE_MIN: (f64, f64) = (160.0, 36.0);
+    const CAPSULE_SIZE: (f64, f64) = (248.0, 46.0);
 
     if enabled {
         if let Ok(size) = window.outer_size() {
@@ -450,13 +498,13 @@ fn set_compact_window(window: Window, enabled: bool) -> Result<(), String> {
             }
         }
         // Relax the minimum first, then shrink — order matters: a min of 720
-        // would clamp the 148x166 set_size and break the capsule.
+        // would clamp the pill set_size and break the capsule.
         let _ = window.set_min_size(Some(tauri::Size::Logical(LogicalSize::new(
             CAPSULE_MIN.0,
             CAPSULE_MIN.1,
         ))));
         window
-            .set_size(LogicalSize::new(148.0, 166.0))
+            .set_size(LogicalSize::new(CAPSULE_SIZE.0, CAPSULE_SIZE.1))
             .map_err(|error| error.to_string())
     } else {
         // Restore the expanded minimum before resizing so the restored size
@@ -585,7 +633,8 @@ async fn send_chat_message_inner(
         .map(|m| format!("- [{}] {}", m.key, m.content.replace('\n', " ")))
         .collect::<Vec<_>>();
     let client = LlmClient::new(settings)?.with_recent_memories(memory_slice);
-    let dispatcher = ToolDispatcher::new(state.system.clone(), state.storage.clone());
+    let dispatcher =
+        ToolDispatcher::with_window(state.system.clone(), state.storage.clone(), window.clone());
     let has_tools = !dispatcher.active_definitions()?.is_empty();
 
     // Two paths:
@@ -746,6 +795,8 @@ pub fn run() {
                     tokens_removed = report.tokens_removed,
                     samples_removed = report.samples_removed,
                     disk_removed = report.disk_removed,
+                    usage_removed = report.usage_removed,
+                    pomodoro_removed = report.pomodoro_removed,
                     "data retention sweep complete"
                 ),
                 Err(err) => tracing::warn!(error = %err, "data retention sweep failed"),
@@ -761,6 +812,12 @@ pub fn run() {
                 }
             };
             tracing::info!(data_dir = %data_dir.display(), "iPet backend initialized");
+            // Spawn the foreground-usage sampler. It ticks every 15s, reads the
+            // `track_app_usage` toggle each tick (so the System view switch
+            // takes effect without an event bus), and writes to `app_usage`.
+            // Failures inside the loop are non-fatal and logged per-tick.
+            let sampler_storage = storage.clone();
+            tauri::async_runtime::spawn(usage_tracker::UsageSampler::new(sampler_storage).run());
             app.manage(AppState {
                 storage,
                 system,
@@ -791,6 +848,9 @@ pub fn run() {
             delete_tool,
             import_tool_from_path,
             get_token_stats,
+            get_app_usage,
+            record_pomodoro_session,
+            get_pomodoro_stats,
             list_models,
             send_chat_message,
             set_always_on_top,

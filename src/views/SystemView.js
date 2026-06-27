@@ -11,6 +11,16 @@ import { card, escapeAttr } from "./shared.js";
 export function renderSystemView(container, state, handlers) {
   const draft = state.settingsDraft ?? {};
   const snap = state.systemSnapshot;
+  const pomo = {
+    workMinutes: 25,
+    breakMinutes: 5,
+    longBreakMinutes: 15,
+    longBreakEvery: 4,
+    autoStartBreak: true,
+    autoStartWork: false,
+    completedWorkCount: 0,
+    ...(state.pomodoro ?? {}),
+  };
 
   container.innerHTML = `
     <div class="settings-page system-page">
@@ -78,6 +88,26 @@ export function renderSystemView(container, state, handlers) {
             </div>
           `,
         )}
+
+        ${card(
+          "应用使用时长",
+          `
+            <p class="card-hint">后台每 15 秒采样前台窗口，按应用累计使用时长（桌面版"屏幕使用时间"），仅本机存储。支持 Windows / macOS / Linux(X11)，纯 Wayland 暂不支持。</p>
+            <label class="checkbox-row">
+              <input name="trackAppUsage" type="checkbox" ${draft.trackAppUsage ? "checked" : ""} />
+              <span>启用应用使用时长统计</span>
+            </label>
+            <div class="settings-grid">
+              <label>
+                <span>空闲阈值（分钟，超过则不计入）</span>
+                <input name="appUsageIdleMinutes" type="number" min="0" max="240" step="1" value="${Number(draft.appUsageIdleMinutes ?? 5)}" ${draft.trackAppUsage ? "" : "disabled"} />
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="text-button primary" type="submit">${icon("check")} 保存</button>
+            </div>
+          `,
+        )}
       </form>
 
       ${card(
@@ -87,8 +117,50 @@ export function renderSystemView(container, state, handlers) {
           <div class="settings-grid window-toggles">
             <button class="text-button" data-action="top" type="button">${icon("pin")} ${state.alwaysOnTop ? "取消置顶" : "窗口置顶"}</button>
             <button class="text-button" data-action="passthrough" type="button">${icon("eyeOff")} 鼠标穿透 10 秒</button>
-            <button class="text-button" data-action="compact" type="button">${icon("compact")} 收起为宠物</button>
+            <button class="text-button" data-action="compact" type="button">${icon("compact")} 收起为小窗</button>
           </div>
+        `,
+      )}
+
+      ${card(
+        "番茄钟",
+        `
+          <form data-role="pomodoro-form">
+            <p class="card-hint">默认 25 分钟专注 / 5 分钟休息循环，每 ${escapeHtml(String(pomo.longBreakEvery))} 个番茄一次长休息。时段切换时通过系统通知提醒。</p>
+            <div class="settings-grid">
+              <label>
+                <span>专注（分钟）</span>
+                <input name="workMinutes" type="number" min="1" max="90" step="1" value="${Number(pomo.workMinutes)}" />
+              </label>
+              <label>
+                <span>休息（分钟）</span>
+                <input name="breakMinutes" type="number" min="1" max="60" step="1" value="${Number(pomo.breakMinutes)}" />
+              </label>
+              <label>
+                <span>长休息（分钟）</span>
+                <input name="longBreakMinutes" type="number" min="1" max="60" step="1" value="${Number(pomo.longBreakMinutes)}" />
+              </label>
+              <label>
+                <span>长休息间隔（个）</span>
+                <input name="longBreakEvery" type="number" min="2" max="12" step="1" value="${Number(pomo.longBreakEvery)}" />
+              </label>
+            </div>
+            <label class="checkbox-row">
+              <input name="autoStartBreak" type="checkbox" ${pomo.autoStartBreak ? "checked" : ""} />
+              <span>专注结束后自动开始休息</span>
+            </label>
+            <label class="checkbox-row">
+              <input name="autoStartWork" type="checkbox" ${pomo.autoStartWork ? "checked" : ""} />
+              <span>休息结束后自动开始下一个专注</span>
+            </label>
+            <div class="tool-format">
+              <strong>已完成番茄</strong>
+              <span>${Number(pomo.completedWorkCount)} 个（本次会话）</span>
+            </div>
+            <div class="form-actions">
+              <button class="text-button primary" type="submit">${icon("check")} 保存</button>
+            </div>
+          </form>
         `,
       )}
 
@@ -118,6 +190,15 @@ export function renderSystemView(container, state, handlers) {
     });
   }
 
+  // Same disable-when-off coupling for the app-usage idle threshold.
+  const usageToggle = form.querySelector('[name="trackAppUsage"]');
+  const usageIdle = form.querySelector('[name="appUsageIdleMinutes"]');
+  if (usageToggle && usageIdle) {
+    usageToggle.addEventListener("change", () => {
+      usageIdle.disabled = !usageToggle.checked;
+    });
+  }
+
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     handlers.onSaveSettings({
@@ -125,6 +206,8 @@ export function renderSystemView(container, state, handlers) {
       autoSystemCheckIntervalMinutes: Number(form.elements.autoSystemCheckIntervalMinutes.value),
       notifyOnReply: form.elements.notifyOnReply.checked,
       notifyOnSystemAlert: form.elements.notifyOnSystemAlert.checked,
+      trackAppUsage: form.elements.trackAppUsage.checked,
+      appUsageIdleMinutes: Number(form.elements.appUsageIdleMinutes.value),
     });
   });
 
@@ -136,6 +219,21 @@ export function renderSystemView(container, state, handlers) {
     .querySelector('[data-action="passthrough"]')
     ?.addEventListener("click", handlers.onTemporaryPassthrough);
   container.querySelector('[data-action="compact"]')?.addEventListener("click", handlers.onGoCapsule);
+
+  // Pomodoro durations live in their own form (separate from the LLM settings
+  // form above) and persist via the `ipet:pomodoro` preference, not save_llm_settings.
+  const pomoForm = container.querySelector('[data-role="pomodoro-form"]');
+  pomoForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handlers.onSavePomodoro?.({
+      workMinutes: Number(pomoForm.elements.workMinutes.value),
+      breakMinutes: Number(pomoForm.elements.breakMinutes.value),
+      longBreakMinutes: Number(pomoForm.elements.longBreakMinutes.value),
+      longBreakEvery: Number(pomoForm.elements.longBreakEvery.value),
+      autoStartBreak: pomoForm.elements.autoStartBreak.checked,
+      autoStartWork: pomoForm.elements.autoStartWork.checked,
+    });
+  });
 }
 
 function autoSystemStatusText(state, draft) {

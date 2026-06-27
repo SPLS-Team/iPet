@@ -18,7 +18,7 @@ export function renderMemoryView(container, state, handlers) {
     <div class="settings-page memory-page">
       <section class="tool-toolbar memory-toolbar" aria-label="记忆库">
         <div class="tool-toolbar-copy">
-          <h3>长期记忆</h3>
+          <h3>记忆库</h3>
           <p>跨会话持久的事实与偏好。模型在对话中主动保存，并注入系统提示词辅助后续回答。</p>
         </div>
         <button class="text-button" data-role="refresh-memories" type="button">${icon("refresh", { size: 16 })}<span>刷新</span></button>

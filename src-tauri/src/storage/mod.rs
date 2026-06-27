@@ -15,13 +15,22 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub use usage::AppUsageStats;
+// `AppUsageEntry` / `AppUsageDayBucket` are part of `AppUsageStats`'s public
+// shape but aren't named directly elsewhere in the crate; re-export on demand.
+#[allow(unused_imports)]
+pub use usage::{AppUsageDayBucket, AppUsageEntry};
+pub use pomodoro::{PomodoroDayBucket, PomodoroStats};
+
 mod caches;
 mod chat;
 mod memories;
+mod pomodoro;
 mod preferences;
 mod sessions;
 mod token_usage;
 mod tools;
+mod usage;
 
 /// Builtin tool manifests, embedded at compile time so the `tool.json` files
 /// under `tool-packages/` are the single source of truth for builtin tool
@@ -58,6 +67,10 @@ const SCREENSHOT_OCR_TOOL_JSON: &str =
 const MEMORY_SAVE_TOOL_JSON: &str = include_str!("../../../tool-packages/memory_save/tool.json");
 const MEMORY_SEARCH_TOOL_JSON: &str =
     include_str!("../../../tool-packages/memory_search/tool.json");
+const APP_USAGE_STATS_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/app_usage_stats/tool.json");
+const CONTROL_POMODORO_TOOL_JSON: &str =
+    include_str!("../../../tool-packages/control_pomodoro/tool.json");
 
 /// Minimal projection of a `tool.json` manifest — just the fields needed to
 /// seed a builtin `ToolConfig`. The full manifest (runtime, permissions,
@@ -260,6 +273,8 @@ pub struct RetentionPolicy {
     pub token_usage_days: u32,
     pub system_samples_days: u32,
     pub disk_scan_days: u32,
+    pub app_usage_days: u32,
+    pub pomodoro_days: u32,
 }
 
 impl Default for RetentionPolicy {
@@ -269,6 +284,8 @@ impl Default for RetentionPolicy {
             token_usage_days: 90,
             system_samples_days: 30,
             disk_scan_days: 30,
+            app_usage_days: 180,
+            pomodoro_days: 365,
         }
     }
 }
@@ -279,6 +296,8 @@ pub struct RetentionReport {
     pub tokens_removed: usize,
     pub samples_removed: usize,
     pub disk_removed: usize,
+    pub usage_removed: usize,
+    pub pomodoro_removed: usize,
 }
 
 /// Current schema version. Bump when adding a migration to `MIGRATIONS`.
@@ -407,6 +426,42 @@ const MIGRATIONS: &[fn(&Connection) -> AppResult<()>] = &[
         Ok(())
     },
     // Add future v3 -> v4 migrations here as append-only entries.
+    // v3 -> v4: per-day app-usage tracking. The background sampler in
+    // `usage_tracker` upserts foreground seconds here each tick; the
+    // `app_usage_stats` builtin tool + Usage view read the aggregates.
+    |conn| -> AppResult<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_usage (
+                day TEXT NOT NULL,
+                app_key TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                seconds INTEGER NOT NULL DEFAULT 0,
+                last_seen TEXT,
+                PRIMARY KEY (day, app_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_app_usage_day ON app_usage(day);
+            "#,
+        )?;
+        Ok(())
+    },
+    // v4 -> v5: pomodoro completion log. The frontend writes one row per
+    // completed focus/break session; the Usage view aggregates it into a
+    // today/7d/30d completed-count + per-day trend.
+    |conn| -> AppResult<()> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS pomodoro_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                completed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pomodoro_day ON pomodoro_log(day);
+            "#,
+        )?;
+        Ok(())
+    },
 ];
 
 impl Storage {
@@ -481,11 +536,19 @@ impl Storage {
             params![disk_cutoff],
         )?;
 
+        // app_usage is keyed by local-date string, so it has its own prune
+        // helper instead of sharing the rfc3339-cutoff path above.
+        drop(conn);
+        let usage_removed = self.prune_app_usage(policy.app_usage_days)?;
+        let pomodoro_removed = self.prune_pomodoro(policy.pomodoro_days)?;
+
         Ok(RetentionReport {
             chat_removed,
             tokens_removed,
             samples_removed,
             disk_removed,
+            usage_removed,
+            pomodoro_removed,
         })
     }
 
@@ -539,6 +602,8 @@ impl Storage {
             builtin_tool_from_manifest(SCREENSHOT_OCR_TOOL_JSON)?,
             builtin_tool_from_manifest(MEMORY_SAVE_TOOL_JSON)?,
             builtin_tool_from_manifest(MEMORY_SEARCH_TOOL_JSON)?,
+            builtin_tool_from_manifest(APP_USAGE_STATS_TOOL_JSON)?,
+            builtin_tool_from_manifest(CONTROL_POMODORO_TOOL_JSON)?,
         ];
 
         for tool in tools {
@@ -813,6 +878,8 @@ mod tests {
             "screenshot_ocr",
             "memory_save",
             "memory_search",
+            "app_usage_stats",
+            "control_pomodoro",
         ] {
             assert!(
                 names.contains(&expected),
@@ -820,7 +887,7 @@ mod tests {
             );
         }
         assert!(
-            tools.iter().filter(|t| t.built_in).count() >= 19,
+            tools.iter().filter(|t| t.built_in).count() >= 21,
             "built-in tools must keep their built_in flag"
         );
     }
